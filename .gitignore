@@ -1,0 +1,27 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local agent data (not for git)
+Memory/phaust.db
+Memory/archive/
+Memory/voices/
+Memory/*.json
+*.onnx
+*.onnx.json
+
+# IDE / OS
+.cursor/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

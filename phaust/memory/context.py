@@ -1,0 +1,122 @@
+"""Context memory — working/session layer (live providers + recent conversation)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Callable, TYPE_CHECKING
+
+from phaust.memory.store import MemoryStore
+
+if TYPE_CHECKING:
+    from phaust.memory.compaction import Compactor
+    from phaust.memory.long_term import LongTermMemory
+    from phaust.memory.semantic import SemanticMemory
+
+
+@dataclass
+class ContextMemory:
+    """Session-scoped working memory injected every turn."""
+
+    db: MemoryStore = field(default_factory=MemoryStore)
+    max_messages: int = 50
+    compact_batch: int = 10
+    providers: dict[str, Callable[[], str]] = field(default_factory=dict)
+    _session_start_message_id: int | None = None
+
+    @property
+    def messages(self) -> list[dict[str, Any]]:
+        msgs = self.db.get_messages()
+        return [{k: v for k, v in m.items() if k != "_id"} for m in msgs]
+
+    @property
+    def session(self) -> dict[str, Any]:
+        return self.db.all_session()
+
+    def register_provider(self, name: str, fn: Callable[[], str]) -> Callable[[], str]:
+        self.providers[name] = fn
+        return fn
+
+    def set_session(self, key: str, value: Any) -> None:
+        self.db.set_session(key, value)
+
+    def get_session(self, key: str, default: Any = None) -> Any:
+        return self.db.get_session(key, default)
+
+    def append_message(self, message: dict[str, Any]) -> None:
+        self.db.append_message(message)
+
+    def begin_session(self) -> None:
+        """Mark where this REPL session started (for end-of-session compaction)."""
+        last = self.db.last_message_id()
+        self._session_start_message_id = (last or 0) + 1
+        self.db.set_session("_session_start_id", self._session_start_message_id)
+
+    def load(self) -> None:
+        start = self.db.get_session("_session_start_id")
+        if isinstance(start, int):
+            self._session_start_message_id = start
+
+    def maybe_compact(
+        self,
+        long_term: LongTermMemory,
+        semantic: SemanticMemory,
+        compactor: Compactor,
+    ) -> dict[str, Any] | None:
+        """When over max_messages, summarize and remove oldest batch."""
+        total = self.db.message_count()
+        if total <= self.max_messages:
+            return None
+
+        overflow = total - self.max_messages
+        batch = min(self.compact_batch, overflow)
+        to_compact = self.db.pop_oldest_messages(batch)
+        if not to_compact:
+            return None
+        return compactor.compact(to_compact, long_term, semantic, source="compaction")
+
+    def finalize_session(
+        self,
+        long_term: LongTermMemory,
+        semantic: SemanticMemory,
+        compactor: Compactor,
+    ) -> dict[str, Any] | None:
+        """On exit: compact messages from this REPL session into episodic memory."""
+        start_id = self._session_start_message_id
+        if start_id is None:
+            start_id = self.db.get_session("_session_start_id")
+        if not isinstance(start_id, int):
+            return None
+
+        last_id = self.db.last_message_id()
+        if last_id is None or last_id < start_id:
+            return None
+
+        to_compact = self.db.get_messages_slice(start_id, last_id)
+        if not to_compact:
+            return None
+
+        result = compactor.compact(
+            to_compact, long_term, semantic, source="session_end"
+        )
+        self.db.delete_messages_up_to(last_id)
+        self.db.clear_session_keys("_session_start_id")
+        self._session_start_message_id = None
+        return result
+
+    def build_prompt_block(self) -> str:
+        parts: list[str] = []
+        sess = self.session
+        display = {k: v for k, v in sess.items() if not str(k).startswith("_")}
+
+        if display:
+            lines = [f"  {k}: {v}" for k, v in display.items()]
+            parts.append("<session>\n" + "\n".join(lines) + "\n</session>")
+
+        for name, fn in self.providers.items():
+            try:
+                value = fn()
+            except Exception as e:
+                value = f"(provider error: {e})"
+            parts.append(f"<context>\n<{name}>{value}</{name}>\n</context>")
+
+        return "\n\n".join(parts)
