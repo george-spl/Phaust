@@ -45,6 +45,14 @@ class Workspace:
         offset: int = 1,
         limit: int = MAX_LINES_DEFAULT,
     ) -> dict[str, Any]:
+        try:
+            offset = int(offset)
+        except (TypeError, ValueError):
+            offset = 1
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = MAX_LINES_DEFAULT
         target = self.resolve(path)
         if not target.is_file():
             return {"error": f"Not a file: {path}"}

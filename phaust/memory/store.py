@@ -322,6 +322,19 @@ class MemoryStore:
             conn.commit()
         return cur.rowcount
 
+    def delete_empty_user_messages(self) -> int:
+        """Remove blank user turns that break LM Studio / Qwen prompt templates."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM messages
+                WHERE role = 'user'
+                  AND (content IS NULL OR TRIM(content) = '')
+                """
+            )
+            conn.commit()
+            return int(cur.rowcount)
+
     def message_count(self) -> int:
         with self._connect() as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM messages").fetchone()

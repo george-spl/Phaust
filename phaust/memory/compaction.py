@@ -76,7 +76,7 @@ class Compactor:
         for item in facts:
             key = (item.get("key") or "").strip()
             value = (item.get("value") or "").strip()
-            if key and value:
+            if key and value and self._should_save_fact(key, value):
                 long_term.remember(key, value)
                 saved += 1
 
@@ -92,8 +92,11 @@ class Compactor:
             "Reply with ONLY valid JSON, no markdown:\n"
             '{"summary": "2-4 sentences with date and main topics/decisions", '
             '"facts": [{"key": "snake_case_key", "value": "short fact"}]}\n'
-            "facts: only stable preferences, identity, decisions (max 8). "
-            "Skip greetings and small talk."
+            "facts: ONLY durable info about the human user (name, job, employer, age, "
+            "stable preferences). Use keys like user_name, user_job_title, user_company. "
+            "Do NOT save: file names edited, dates, agent name (Phaust), README text, "
+            "tool/API settings, one-off tasks, or anything from the assistant's identity. "
+            "Max 5 facts. Skip greetings and small talk."
         )
         user = f"Period: {period}\n\nChat log:\n{transcript[:12000]}"
 
@@ -125,6 +128,46 @@ class Compactor:
                 "facts": [],
                 "_error": str(e),
             }
+
+    _SKIP_FACT_PREFIXES = (
+        "file_",
+        "target_",
+        "modification_",
+        "interaction_",
+        "llm_",
+        "memory_",
+        "system_",
+        "assistant_",
+        "agent_",
+        "model_",
+        "python_",
+        "edit_",
+        "current_",
+        "iteration_",
+        "next_",
+    )
+    _SKIP_FACT_KEYS = frozenset(
+        {
+            "identity",
+            "ai_role_preference",
+            "employer",
+            "occupation",
+        }
+    )
+
+    @classmethod
+    def _should_save_fact(cls, key: str, value: str) -> bool:
+        """Drop session noise the model often mis-labels as facts."""
+        key = key.strip().lower()
+        if key in cls._SKIP_FACT_KEYS:
+            return False
+        if any(key.startswith(p) for p in cls._SKIP_FACT_PREFIXES):
+            return False
+        if "phaust" in value.lower() and not key.startswith("user_"):
+            return False
+        if key.endswith("_file") or key.endswith("_target"):
+            return False
+        return True
 
     @staticmethod
     def _parse_json(content: str) -> dict[str, Any]:
