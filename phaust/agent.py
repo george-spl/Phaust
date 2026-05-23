@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 import requests
@@ -43,6 +44,8 @@ class Agent:
     model: str = "qwen/qwen3.5-9b"
     base_url: str = "http://127.0.0.1:1234/v1"
     api_key: str = field(default="NO_API_KEY", repr=False)
+    temperature: float = 0.3
+    max_tokens: int = 8192
     max_tool_rounds: int = 12
     max_write_proposals: int = 2
     semantic_top_k: int = 5
@@ -58,6 +61,9 @@ class Agent:
     compactor: Compactor | None = None
     workspace: Workspace | None = None
     require_write_approval: bool = True
+    config_path: Path | None = None
+    config_name: str = "Phaust-1"
+    agents_md_path: Path | None = None
     _files_read_this_turn: set[str] = field(default_factory=set, repr=False)
 
     def __post_init__(self) -> None:
@@ -490,8 +496,8 @@ class Agent:
             payload: dict[str, Any] = {
                 "model": self.model,
                 "messages": self._api_messages(prefix),
-                "temperature": 0.3,
-                "max_tokens": 8192,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
                 "extra_body": self._llm_extra(),
             }
 
@@ -731,7 +737,18 @@ def _print_tool_result(name: str | None, result: dict[str, Any]) -> None:
 
 
 def run(agent: Agent) -> None:
-    print("Phaust-1 ready. Memory: SQLite + auto-compaction")
+    name = agent.config_name
+    config_path = agent.config_path
+    agents_path = agent.agents_md_path
+    if config_path:
+        print(f"{name} ready (config: {config_path})")
+    else:
+        print(f"{name} ready (defaults — no phaust.toml found)")
+    if agents_path:
+        print(f"  rules: {agents_path}")
+    else:
+        print("  rules: built-in fallback (no AGENTS.md)")
+    print("Memory: SQLite + auto-compaction")
     print("  context | long-term | semantic | workspace (writes need your approval)")
     print("Type 'exit' to quit.\n")
 

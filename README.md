@@ -66,7 +66,10 @@ Protected paths (no writes): `Memory/`, `.venv/`, `.git/`, `node_modules/`, etc.
 
 ```
 main.py              Entry point, tool registration
+phaust.toml          Runtime settings (model, memory limits, workspace)
 phaust/
+  config.py          Load phaust.toml
+  prompts.py         Load AGENTS.md into system prompt
   agent.py           Chat loop, tool orchestration, synthesis, write flow
   tool_parse.py      Qwen/LM Studio XML tool-call fallback
   tools.py           Tool schema registry
@@ -86,16 +89,17 @@ Memory/
 
 ## Configuration
 
-Edit defaults in `phaust/agent.py` or when building the agent in `main.py`:
+Edit **`phaust.toml`** in the project root (loaded on startup). Override path with env `PHAUST_CONFIG`.
 
-| Option | Default |
-|--------|---------|
-| `model` | `qwen/qwen3.5-9b` |
-| `base_url` | `http://127.0.0.1:1234/v1` |
-| `workspace_root` | Project folder (`main.py` directory) |
-| `max_write_proposals` | `2` previews per user message |
+| Section | Keys |
+|---------|------|
+| `[phaust]` | `name`, `iteration` |
+| `[llm]` | `model`, `base_url`, `api_key`, `temperature`, `max_tokens` |
+| `[workspace]` | `root` (relative to `phaust.toml`) |
+| `[memory]` | `max_messages`, `compact_batch`, `max_episodes`, `semantic_top_k` |
+| `[agent]` | `agents_md`, `max_tool_rounds`, `max_write_proposals`, `require_write_approval` |
 
-System prompt and tool rules live in `main.py`.
+**Project rules:** Edit [`AGENTS.md`](AGENTS.md) to change tone, tool behavior, and write policy (loaded every session). Set `agents_md = ""` in `phaust.toml` to disable and use a minimal built-in fallback.
 
 ## LM Studio tips
 

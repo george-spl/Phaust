@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Annotated
 
 from phaust import Agent, run
+from phaust import workspace
+from phaust.config import load_config
 from phaust.workspace import Workspace, register_readonly_tools
 from phaust.workspace_write import register_write_tools
 
@@ -34,12 +36,28 @@ Talk like an English gentleman; be precise and helpful.\
 
 
 def build_agent(workspace_root: Path | None = None) -> Agent:
-    workspace = Workspace(workspace_root or WORKSPACE_ROOT)
+    project_root = workspace_root or WORKSPACE_ROOT
+    config, config_path = load_config(project_root=project_root)
+    ws_root = config.workspace_root or project_root
 
     agent = Agent(
-        workspace=workspace,
+        workspace=Workspace(ws_root),
         system_prompt=SYSTEM_PROMPT,
+        model=config.model,
+        base_url=config.base_url,
+        api_key=config.api_key,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        max_messages=config.max_messages,
+        compact_batch=config.compact_batch,
+        max_episodes=config.max_episodes,
+        semantic_top_k=config.semantic_top_k,
+        max_tool_rounds=config.max_tool_rounds,
+        max_write_proposals=config.max_write_proposals,
+        require_write_approval=config.require_write_approval,
     )
+    agent.config_path = config_path
+    agent.config_name = config.name
 
     @agent.context
     def time_context() -> str:
@@ -47,10 +65,10 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.context
     def workspace_context() -> str:
-        return workspace.summary()
+        return workspace.summary() # type: ignore
 
-    register_readonly_tools(agent, workspace)
-    register_write_tools(agent, workspace)
+    register_readonly_tools(agent, workspace) # type: ignore
+    register_write_tools(agent, workspace) # type: ignore
 
     assert agent.long_term and agent.semantic and agent.context_memory
     lt = agent.long_term

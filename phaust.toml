@@ -1,0 +1,28 @@
+# Phaust configuration — edit paths and model for your LM Studio setup.
+
+[phaust]
+name = "Phaust-1"
+iteration = 1
+
+[llm]
+model = "qwen/qwen3.5-9b"
+base_url = "http://127.0.0.1:1234/v1"
+api_key = "NO_API_KEY"
+temperature = 0.3
+max_tokens = 8192
+
+[workspace]
+# Relative to this file's directory (project root)
+root = "."
+
+[memory]
+max_messages = 50
+compact_batch = 10
+max_episodes = 500
+semantic_top_k = 5
+
+[agent]
+agents_md = "AGENTS.md"
+max_tool_rounds = 12
+max_write_proposals = 2
+require_write_approval = true
