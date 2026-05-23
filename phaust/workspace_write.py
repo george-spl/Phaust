@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 MAX_WRITE_BYTES = 512_000
 MAX_DIFF_LINES = 120
 
-WRITE_TOOL_NAMES = frozenset({"edit_file", "write_file"})
+WRITE_TOOL_NAMES = frozenset({"edit_file", "write_file", "delete_file"})
 
 WRITE_BLOCKED_DIR_NAMES = {
     ".git",
@@ -89,6 +89,12 @@ def prepare_edit_file(
         return {"error": f"Not a file (edit requires existing file): {path}"}
 
     before = target.read_text(encoding="utf-8", errors="replace")
+    if not before.strip():
+        return {
+            "error": "File is empty — use write_file, not edit_file",
+            "path": path,
+            "hint": "read_file shows 0 lines. write_file new content from scratch.",
+        }
     count = before.count(old_string)
     if count == 0:
         lines = before.splitlines()
@@ -155,6 +161,39 @@ def prepare_write_file(ws: Workspace, path: str, content: str) -> dict[str, Any]
     }
 
 
+def prepare_delete_file(ws: Workspace, path: str) -> dict[str, Any]:
+    """Validate file deletion and return a proposal (no disk change)."""
+    target, err = _check_writable_path(ws, path)
+    if err:
+        return err
+
+    if not target.exists():
+        return {"error": f"File not found: {path}"}
+    if target.is_dir():
+        return {"error": f"Path is a directory: {path}"}
+    if not target.is_file():
+        return {"error": f"Not a file: {path}"}
+
+    before = target.read_text(encoding="utf-8", errors="replace")
+    rel = target.relative_to(ws.root).as_posix()
+    lines = before.splitlines()
+    preview = "\n".join(f"- {line}" for line in lines[:15])
+    if len(lines) > 15:
+        preview += f"\n... ({len(lines) - 15} more lines) ..."
+    diff = preview if preview else "(empty file)"
+    diff += "\n\n>>> FILE WILL BE DELETED FROM DISK <<<"
+
+    return {
+        "action": "delete_file",
+        "path": rel,
+        "before": before,
+        "after": "",
+        "delete": True,
+        "diff": diff,
+        "summary": f"Delete file {rel} ({len(before)} chars)",
+    }
+
+
 def apply_proposal(proposal: dict[str, Any], ws: Workspace) -> dict[str, Any]:
     """Write a previously approved proposal to disk."""
     if proposal.get("error"):
@@ -167,6 +206,15 @@ def apply_proposal(proposal: dict[str, Any], ws: Workspace) -> dict[str, Any]:
     target, err = _check_writable_path(ws, path)
     if err:
         return err
+
+    if proposal.get("delete"):
+        target.unlink()
+        return {
+            "applied": True,
+            "deleted": True,
+            "path": path,
+            "action": "delete_file",
+        }
 
     after = proposal.get("after", "")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -209,5 +257,10 @@ def register_write_tools(agent: Agent, workspace: Workspace) -> None:
 
     @agent.tool
     def write_file(path: str, content: str) -> dict:
-        """Propose creating or overwriting a file. Empty file = only new content user asked for; plain lines, no N| prefixes."""
+        """Propose creating or overwriting a file. Empty content clears the file. User must approve."""
         return prepare_write_file(workspace, path, content)
+
+    @agent.tool
+    def delete_file(path: str) -> dict:
+        """Propose deleting a file from disk. User must approve."""
+        return prepare_delete_file(workspace, path)

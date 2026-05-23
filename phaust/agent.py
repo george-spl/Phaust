@@ -27,7 +27,12 @@ from phaust.workspace_write import (
 MAX_SYNTHESIS_CHARS = 12_000
 
 _WRITE_INTENT_RE = re.compile(
-    r"\b(write|add|insert|append|edit|replace|overwrite|create|put|comment\s+in|update\s+the\s+file)\b",
+    r"\b(write|add|insert|append|edit|replace|overwrite|create|put|delete|remove|clear|empty|"
+    r"comment\s+in|update\s+the\s+file)\b",
+    re.I,
+)
+_APPEND_INTENT_RE = re.compile(
+    r"\b(?:more|another|additional|\d+\s+more)\s+lines?\b|\bappend\b",
     re.I,
 )
 
@@ -53,6 +58,7 @@ class Agent:
     compactor: Compactor | None = None
     workspace: Workspace | None = None
     require_write_approval: bool = True
+    _files_read_this_turn: set[str] = field(default_factory=set, repr=False)
 
     def __post_init__(self) -> None:
         self.base_url = self.base_url.rstrip("/")
@@ -141,6 +147,7 @@ class Agent:
             blocks.append(
                 "<write_rules>\n"
                 "For file edits, trust read_file on disk — not old chat or episodic memory. "
+                "To delete a file: delete_file (after read_file). To clear contents only: write_file with empty content or edit_file.\n"
                 "If the file is empty, write only what the user asked now (plain lines, "
                 "no N| prefixes, do not continue numbering from earlier turns).\n"
                 "</write_rules>"
@@ -148,12 +155,18 @@ class Agent:
 
         if empty_write_paths:
             paths = ", ".join(sorted(empty_write_paths))
-            blocks.append(
-                f"<write_context>\n"
+            empty_msg = (
                 f"Confirmed empty on disk: {paths}. "
-                f"write_file must contain only the new lines the user requested.\n"
-                f"</write_context>"
+                f"write_file must contain only the new lines the user requested."
             )
+            if self._user_requests_append(user_message):
+                empty_msg = (
+                    f"Confirmed empty on disk: {paths}. "
+                    f"User asked for MORE lines but the file has 0 lines — use write_file "
+                    f"with fresh lines starting at 1 (or plain unnumbered lines). "
+                    f"Ignore any prior chat claiming earlier lines exist."
+                )
+            blocks.append(f"<write_context>\n{empty_msg}\n</write_context>")
 
         if file_snapshots:
             parts: list[str] = []
@@ -356,6 +369,18 @@ class Agent:
         return bool(_WRITE_INTENT_RE.search(message))
 
     @staticmethod
+    def _user_requests_append(message: str) -> bool:
+        return bool(_APPEND_INTENT_RE.search(message))
+
+    def _normalize_rel_path(self, path: str) -> str:
+        if not path.strip() or self.workspace is None:
+            return path.strip()
+        try:
+            return self.workspace.resolve(path).relative_to(self.workspace.root).as_posix()
+        except (PermissionError, ValueError):
+            return path.strip().replace("\\", "/").lstrip("/")
+
+    @staticmethod
     def _round_includes_write_tools(tool_calls: list[dict[str, Any]]) -> bool:
         for call in tool_calls:
             name = call.get("function", {}).get("name")
@@ -383,6 +408,8 @@ class Agent:
     def _format_write_outcome(results: list[dict[str, Any]]) -> str:
         for result in results:
             if result.get("applied"):
+                if result.get("deleted"):
+                    return f"Deleted {result.get('path', 'file')}."
                 return (
                     f"Change applied to {result.get('path', 'file')}. "
                     "You can ask me to read the file to verify."
@@ -400,10 +427,13 @@ class Agent:
         return f"Stopped proposing changes{where}: {reason}"
 
     def _write_nudge_message(self, read_paths: list[str]) -> str:
-        if read_paths:
-            joined = ", ".join(read_paths)
-            return f"{self._WRITE_NUDGE} File(s) already read: {joined}."
-        return self._WRITE_NUDGE
+        if not read_paths:
+            return (
+                "Call read_file on the target path first. "
+                "Then use write_file or edit_file with exact on-disk text — not old chat."
+            )
+        joined = ", ".join(read_paths)
+        return f"{self._WRITE_NUDGE} File(s) already read: {joined}."
 
     @staticmethod
     def _snapshots_from_results(results: list[dict[str, Any]]) -> dict[str, str]:
@@ -439,6 +469,7 @@ class Agent:
 
         self.context_memory.append_message({"role": "user", "content": user_message}) # type: ignore
 
+        self._files_read_this_turn = set()
         tool_rounds = 0
         wants_edit = self._user_requests_file_change(user_message)
         write_applied = False
@@ -505,7 +536,12 @@ class Agent:
                     and write_nudges < 1
                 ):
                     write_nudges += 1
-                    print("  → write pending — nudging model to call edit_file/write_file…")
+                    label = (
+                        "read_file first, then write…"
+                        if not read_paths
+                        else "write pending — nudging model…"
+                    )
+                    print(f"  → {label}")
                     self.context_memory.append_message( # type: ignore
                         {"role": "user", "content": self._write_nudge_message(read_paths)}
                     )
@@ -537,6 +573,10 @@ class Agent:
                 print(f"  → {name}({fn.get('arguments', '')})")
                 result = self._execute_tool_call(call)
                 round_results.append(result)
+                if name == "read_file" and not result.get("error"):
+                    rel = str(result.get("path") or "")
+                    if rel:
+                        self._files_read_this_turn.add(rel)
                 if name in WRITE_TOOL_NAMES:
                     last_write_path = str(result.get("path") or last_write_path or "")
                     if result.get("error") is None and not result.get("skipped"):
@@ -610,6 +650,20 @@ class Agent:
     def _execute_tool_call(self, tool_call: dict[str, Any]) -> dict[str, Any]:
         fn = tool_call.get("function", {})
         name = fn.get("name")
+
+        if name in WRITE_TOOL_NAMES:
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            rel = self._normalize_rel_path(str(args.get("path", "")))
+            if rel and rel not in self._files_read_this_turn:
+                return {
+                    "error": "Call read_file on this path before write_file/edit_file",
+                    "path": rel,
+                    "hint": "Prior chat about file contents may be stale.",
+                }
+
         result = self.tools.execute(tool_call)
 
         if name not in WRITE_TOOL_NAMES:
@@ -666,7 +720,9 @@ def _print_tool_result(name: str | None, result: dict[str, Any]) -> None:
     elif name == "list_files":
         print(f"     ✓ {result.get('count', 0)} path(s)")
     elif name in WRITE_TOOL_NAMES:
-        if result.get("applied"):
+        if result.get("applied") and result.get("deleted"):
+            print(f"     ✓ deleted {result.get('path')}")
+        elif result.get("applied"):
             print(f"     ✓ written {result.get('path')} ({result.get('bytes', '?')} bytes)")
         elif result.get("cancelled"):
             print("     ○ cancelled (disk unchanged)")

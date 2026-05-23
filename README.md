@@ -47,7 +47,8 @@ Older messages are auto-compacted into episodes (and only durable **user** facts
 - `list_files` — glob file listing
 - `grep` — regex search in files
 - `edit_file` — propose a single search/replace (unique `old_string`)
-- `write_file` — propose create or full overwrite
+- `write_file` — propose create, overwrite, or clear (empty content)
+- `delete_file` — propose removing a file from disk
 
 **Write safety:** Every `edit_file` / `write_file` shows a full diff first. Nothing is written until you answer `y` to `Apply this change to disk? [y/N]`. Declining ends the turn and leaves the file unchanged.
 
