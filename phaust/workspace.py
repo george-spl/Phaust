@@ -71,16 +71,14 @@ class Workspace:
         start = max(0, offset - 1)
         end = start + max(1, min(limit, MAX_LINES_DEFAULT))
         chunk = lines[start:end]
+        rel = target.relative_to(self.root).as_posix()
 
-        content = "\n".join(
-            f"{start + i + 1}|{line}" for i, line in enumerate(chunk)
-        )
         return {
-            "path": path,
+            "path": rel,
             "total_lines": len(lines),
             "offset": offset,
             "limit": limit,
-            "content": content,
+            "content": "\n".join(chunk),
         }
 
     def list_files(self, glob_pattern: str = "**/*") -> dict[str, Any]:
@@ -176,7 +174,7 @@ def register_readonly_tools(agent: Agent, workspace: Workspace) -> None:
         offset: Annotated[int, "Start line (1-based)"] = 1,
         limit: Annotated[int, "Max lines to return"] = 200,
     ) -> dict:
-        """Read a text file under the workspace. Use before answering code questions."""
+        """Read a text file under the workspace. Returns exact file text in content (for edit_file)."""
         return workspace.read_file(path, offset=offset, limit=limit)
 
     @agent.tool

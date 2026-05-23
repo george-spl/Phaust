@@ -135,10 +135,8 @@ def prepare_write_file(ws: Workspace, path: str, content: str) -> dict[str, Any]
     before = ""
     if exists and target.is_file():
         before = target.read_text(encoding="utf-8", errors="replace")
-        action = "overwrite"
         summary = f"Overwrite {rel} ({len(before)} → {len(content)} chars)"
     else:
-        action = "create"
         summary = f"Create new file {rel} ({len(content)} chars)"
 
     if re.search(r"^\d+\|", content, re.MULTILINE):

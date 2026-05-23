@@ -13,9 +13,13 @@ build/
 
 # Local agent data (not for git)
 Memory/phaust.db
+Memory/phaust.db.bak
+Memory/*.bak
 Memory/archive/
 Memory/voices/
 Memory/*.json
+*.db.bak
+stress_test.txt
 *.onnx
 *.onnx.json
 

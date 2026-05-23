@@ -299,7 +299,7 @@ class MemoryStore:
                 ),
             )
             conn.commit()
-            return int(cur.lastrowid) #type:ignore
+            return int(cur.lastrowid)  # type: ignore[union-attr]
 
     def get_messages(self) -> list[dict[str, Any]]:
         with self._connect() as conn:

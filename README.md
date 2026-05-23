@@ -43,7 +43,7 @@ Older messages are auto-compacted into episodes (and only durable **user** facts
 
 **Workspace**
 
-- `read_file` — read a file under the project root
+- `read_file` — read a file under the project root (content is exact file text for use in `edit_file`)
 - `list_files` — glob file listing
 - `grep` — regex search in files
 - `edit_file` — propose a single search/replace (unique `old_string`)
@@ -110,7 +110,7 @@ System prompt and tool rules live in `main.py`.
 | Plan to edit but no diff | Model replied with text only — one nudge, then XML tool blocks are parsed if needed. |
 | Raw `<tool_call>` in the reply | Qwen text-format tools — parsed when possible; stripped from final text. |
 | `n` loops forever | Fixed: one decline stops the turn; max 2 write previews per message. |
-| Wrong line numbers (`7\|`, `2\|`) on write | Model reused old chat — trust `read_file`; append with `edit_file` and exact text from disk. |
+| Wrong line numbers (`7\|`, `2\|`) on write | Was caused by numbered read output — fixed: `read_file` returns exact disk text. |
 | Answer stops after `read_file` on edits | Read-only synthesis — skipped when you asked for a file change. |
 
 ## Inspecting memory
