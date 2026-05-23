@@ -66,6 +66,10 @@ class SemanticMemory:
         }
 
     def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        try:
+            top_k = int(top_k)
+        except (TypeError, ValueError):
+            top_k = 5
         query = query.strip()
         entries = self.db.list_episodes()
         if not query or not entries:

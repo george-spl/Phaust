@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, TYPE_CHECKING
+
+MEMORY_WRITES_DISABLED = "memory_writes_disabled"
+
+_NO_MEMORY_RE = re.compile(
+    r"\bremember\s+nothing\b|\b(?:don'?t|do\s+not)\s+(?:remember|store|save)\b"
+    r"|\bno\s+(?:new\s+)?(?:memory|facts?)\s+(?:this\s+)?session\b"
+    r"|\bwithout\s+(?:saving|storing)\s+memory\b",
+    re.IGNORECASE,
+)
 
 from phaust.memory.store import MemoryStore
 
@@ -43,15 +53,31 @@ class ContextMemory:
         return self.db.get_session(key, default)
 
     def append_message(self, message: dict[str, Any]) -> None:
+        if message.get("role") == "user" and not str(message.get("content") or "").strip():
+            return
         self.db.append_message(message)
+
+    @staticmethod
+    def user_requests_no_memory(message: str) -> bool:
+        return bool(_NO_MEMORY_RE.search(message))
+
+    def memory_writes_enabled(self) -> bool:
+        return not bool(self.get_session(MEMORY_WRITES_DISABLED, False))
+
+    def set_memory_writes_disabled(self, disabled: bool = True) -> None:
+        self.set_session(MEMORY_WRITES_DISABLED, disabled)
 
     def begin_session(self) -> None:
         """Mark where this REPL session started (for end-of-session compaction)."""
+        self.db.clear_session_keys(MEMORY_WRITES_DISABLED)
         last = self.db.last_message_id()
         self._session_start_message_id = (last or 0) + 1
         self.db.set_session("_session_start_id", self._session_start_message_id)
 
     def load(self) -> None:
+        removed = self.db.delete_empty_user_messages()
+        if removed:
+            print(f"Memory: removed {removed} empty user message(s) from context")
         start = self.db.get_session("_session_start_id")
         if isinstance(start, int):
             self._session_start_message_id = start
@@ -63,6 +89,8 @@ class ContextMemory:
         compactor: Compactor,
     ) -> dict[str, Any] | None:
         """When over max_messages, summarize and remove oldest batch."""
+        if not self.memory_writes_enabled():
+            return None
         total = self.db.message_count()
         if total <= self.max_messages:
             return None
@@ -94,6 +122,18 @@ class ContextMemory:
         to_compact = self.db.get_messages_slice(start_id, last_id)
         if not to_compact:
             return None
+
+        if not self.memory_writes_enabled():
+            count = len(to_compact)
+            self.db.delete_messages_up_to(last_id)
+            self.db.clear_session_keys("_session_start_id", MEMORY_WRITES_DISABLED)
+            self._session_start_message_id = None
+            return {
+                "compacted": count,
+                "episode_saved": False,
+                "facts_saved": 0,
+                "memory_skipped": True,
+            }
 
         result = compactor.compact(
             to_compact, long_term, semantic, source="session_end"

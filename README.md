@@ -39,11 +39,17 @@ Older messages are auto-compacted into semantic episodes and facts so memory sta
 
 ## Tools
 
-**Workspace (read-only)**
+**Workspace**
 
 - `read_file` — read a file under the project root
 - `list_files` — glob file listing
 - `grep` — regex search in files
+- `edit_file` — propose a single search/replace (unique `old_string`)
+- `write_file` — propose create or full overwrite
+
+**Write safety:** Every `edit_file` / `write_file` shows a full diff in the terminal first. Nothing is written until you answer `y` to `Apply this change to disk? [y/N]`. Declining leaves files unchanged.
+
+Protected paths (no writes): `Memory/`, `.venv/`, `.git/`, `node_modules/`, etc. Allowed extensions include `.py`, `.md`, `.json`, `.txt`, `.yaml`, `.toml`.
 
 **Memory**
 
@@ -60,7 +66,8 @@ main.py              Entry point, tool registration
 phaust/
   agent.py           Chat loop, tool orchestration, synthesis
   tools.py           Tool schema registry
-  workspace.py       Read-only file tools
+    workspace.py       Read-only file tools
+    workspace_write.py Edit/write with user approval
   memory/
     store.py         SQLite (phaust.db)
     context.py       Working / chat memory
