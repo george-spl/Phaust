@@ -2,13 +2,13 @@
 
 **P**ractical **H**elper **A**utomated **U**tility **S**ystem — Iteration 1
 
-A local, private AI agent that runs in your terminal. It uses a local LLM (via [LM Studio](https://lmstudio.ai) or any OpenAI-compatible server), persistent SQLite memory, and read-only workspace tools.
+A local, private AI agent that runs in your terminal. It uses a local LLM (via [LM Studio](https://lmstudio.ai) or any OpenAI-compatible server), SQLite memory, and workspace tools (read, grep, and approved writes).
 
 ## Requirements
 
 - Python 3.11+
-- A local LLM server at `http://LOCALHOST:1234` (default LM Studio port)
-- Model loaded in the server (default config: `qwen/qwen3.5-9b`)
+- A local LLM server at `http://127.0.0.1:1234` (default LM Studio port)
+- A chat model loaded in the server (default: `qwen/qwen3.5-9b`)
 
 ## Setup
 
@@ -32,10 +32,12 @@ Type `exit` or `quit` to end the session and archive memory.
 | Layer | Role |
 |-------|------|
 | **Context** | Recent chat (last 50 messages), session variables, live context (time, workspace) |
-| **Long-term** | Explicit facts (`remember` / `recall` / `forget`) |
+| **Long-term** | Explicit facts (`remember` / `recall` / `forget`) — user profile keys like `user_name` |
 | **Semantic** | Searchable episode summaries from past conversations |
 
-Older messages are auto-compacted into semantic episodes and facts so memory stays small without losing the gist.
+Older messages are auto-compacted into episodes (and only durable **user** facts) so memory stays small without losing the gist.
+
+**Explain vs edit:** For “what does this file do?”, Phaust reads the file and answers from source (synthesis pass). For “write / edit / add a line”, it skips synthesis and uses the write path with diff approval.
 
 ## Tools
 
@@ -47,7 +49,7 @@ Older messages are auto-compacted into semantic episodes and facts so memory sta
 - `edit_file` — propose a single search/replace (unique `old_string`)
 - `write_file` — propose create or full overwrite
 
-**Write safety:** Every `edit_file` / `write_file` shows a full diff in the terminal first. Nothing is written until you answer `y` to `Apply this change to disk? [y/N]`. Declining leaves files unchanged.
+**Write safety:** Every `edit_file` / `write_file` shows a full diff first. Nothing is written until you answer `y` to `Apply this change to disk? [y/N]`. Declining ends the turn and leaves the file unchanged.
 
 Protected paths (no writes): `Memory/`, `.venv/`, `.git/`, `node_modules/`, etc. Allowed extensions include `.py`, `.md`, `.json`, `.txt`, `.yaml`, `.toml`.
 
@@ -57,39 +59,59 @@ Protected paths (no writes): `Memory/`, `.venv/`, `.git/`, `node_modules/`, etc.
 - `memorize`, `search_semantic`, `forget_semantic`
 - `set_session`, `get_session`
 
-For code questions, Phaust reads the file first, then answers from the source (synthesis pass) to reduce hallucination.
+**Private session:** Say e.g. `remember nothing this session` — Phaust blocks `remember` / `memorize` and discards the transcript on `exit` (no new facts or episodes).
 
 ## Project layout
 
 ```
 main.py              Entry point, tool registration
 phaust/
-  agent.py           Chat loop, tool orchestration, synthesis
+  agent.py           Chat loop, tool orchestration, synthesis, write flow
+  tool_parse.py      Qwen/LM Studio XML tool-call fallback
   tools.py           Tool schema registry
-    workspace.py       Read-only file tools
-    workspace_write.py Edit/write with user approval
+  workspace.py       Read-only file tools
+  workspace_write.py Edit/write with user approval
   memory/
     store.py         SQLite (phaust.db)
-    context.py       Working / chat memory
+    context.py       Working / chat memory, session policy
     long_term.py     Key-value facts
-    semantic.py      Episode search (embeddings)
+    semantic.py      Episode search (embeddings + fallback)
     compaction.py    Summarize old chat into memory
+docs/
+  ROADMAP.md         Phaust-2 plans
 Memory/
   phaust.db          Created at runtime (gitignored)
 ```
 
 ## Configuration
 
-Edit defaults in `phaust/agent.py` or pass options when building the agent in `main.py`:
+Edit defaults in `phaust/agent.py` or when building the agent in `main.py`:
 
-- `model` — model id your server expects
-- `base_url` — API base (default `http://127.0.0.1:1234/v1`)
-- `workspace_root` — `WORKSPACE_ROOT` in `main.py` (default: project folder)
+| Option | Default |
+|--------|---------|
+| `model` | `qwen/qwen3.5-9b` |
+| `base_url` | `http://127.0.0.1:1234/v1` |
+| `workspace_root` | Project folder (`main.py` directory) |
+| `max_write_proposals` | `2` previews per user message |
+
+System prompt and tool rules live in `main.py`.
 
 ## LM Studio tips
 
 - Disable **Enable Thinking** for Qwen 3.x if replies are empty or show long “thinking” traces.
-- Ensure the server is running before starting Phaust.
+- Keep a **chat model loaded** for the whole session — unloading causes `(no response from model)`.
+- Do not press **Enter** on an empty `You:` prompt — blank user turns break Qwen’s template (`400: No user query found`).
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---------|-------------|
+| `400` / “No user query found” | Empty user message in context — restart; Phaust skips blank input and cleans old rows on startup. |
+| Plan to edit but no diff | Model replied with text only — one nudge, then XML tool blocks are parsed if needed. |
+| Raw `<tool_call>` in the reply | Qwen text-format tools — parsed when possible; stripped from final text. |
+| `n` loops forever | Fixed: one decline stops the turn; max 2 write previews per message. |
+| Wrong line numbers (`7\|`, `2\|`) on write | Model reused old chat — trust `read_file`; append with `edit_file` and exact text from disk. |
+| Answer stops after `read_file` on edits | Read-only synthesis — skipped when you asked for a file change. |
 
 ## Inspecting memory
 
@@ -99,10 +121,16 @@ sqlite3 Memory\phaust.db
 
 ```sql
 .tables
-SELECT * FROM facts;
-SELECT substr(text, 1, 80), created_at FROM episodes;
+SELECT key, value FROM facts;
+SELECT substr(text, 1, 100), created_at FROM episodes ORDER BY created_at DESC LIMIT 5;
 .quit
 ```
+
+Healthy facts: mostly `user_*` keys (name, job, company, hobbies). Task details belong in **episodes**, not facts.
+
+## What's next
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for **Phaust-2** (allowlisted shell, `AGENTS.md`, task mode, config file).
 
 ## License
 
