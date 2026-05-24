@@ -48,8 +48,9 @@ _APPEND_INTENT_RE = re.compile(
 _MEMORY_RECALL_RE = re.compile(
     r"\b(?:do you remember|don'?t you remember|you don'?t remember"
     r"|recall\s+episode|what did we (?:say|discuss|talk about)"
+    r"|what (?:did )?I (?:just )?memorize|what I memorized"
     r"|something we discussed|discussed earlier|previous(?:ly)?\s+(?:session|conversation)"
-    r"|sent .* message|message to cursor|earlier today)\b",
+    r"|sent .* message|message to cursor|earlier today|\brecall\b)\b",
     re.I,
 )
 _MEMORIZE_INTENT_RE = re.compile(
@@ -58,7 +59,27 @@ _MEMORIZE_INTENT_RE = re.compile(
     re.I,
 )
 MEMORY_STORE_TOOL_NAMES = frozenset({"memorize", "remember"})
-
+MEMORY_RECALL_TOOL_NAMES = frozenset({
+    "recall_episode",
+    "recall",
+    "search_semantic",
+    "list_episodes",
+    "list_memories",
+})
+_EPISODE_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+_SHELL_INTENT_RE = re.compile(
+    r"\b(?:run_command|run\s+(?:git|python|curl)|git\s+\w+|stage\s+(?:all|changes)|"
+    r"curl\s+http)\b",
+    re.I,
+)
+_LOGGING_TASK_RE = re.compile(
+    r"\btest_logging(?:_\d+)?(?:_\d+-\d+-\d+)?\.txt\b|"
+    r"\b(?:George scores|self-assessment|Phaust overall opinion)\b",
+    re.I,
+)
 
 @dataclass
 class Agent:
@@ -167,7 +188,9 @@ class Agent:
             blocks.append(long_term_block)
 
         file_change = self._user_requests_file_change(user_message)
-        memory_question = self._user_asks_about_past(user_message)
+        memory_question = self._user_asks_about_past(user_message) or bool(
+            _EPISODE_UUID_RE.search(user_message)
+        )
 
         if memory_question:
             recall_block = self.semantic.build_recall_block( # type: ignore
@@ -251,7 +274,54 @@ class Agent:
                 "</session_memory_policy>"
             )
 
+        if self._session_has_prior_assistant_reply():
+            blocks.append(
+                "<conversation_rules>\n"
+                "You already greeted the user this session. Do NOT open with hello, "
+                "good morning, good to see you, or re-introduce yourself. "
+                "Respond directly to what they asked.\n"
+                "Speak to George in second person ('you'). Never narrate in third person "
+                "('The user is asking…', 'George wants…'). Give your actual answer.\n"
+                "</conversation_rules>"
+            )
+
+        if self._is_minimal_prompt(user_message):
+            blocks.append(
+                "<brevity>\n"
+                "The user's message is very short (a number, yes/no, or single word). "
+                "Reply in one brief sentence unless they asked for detail. "
+                "Do not say 'ready for task #N' or treat each digit as a new task.\n"
+                "</brevity>"
+            )
+
+        if _SHELL_INTENT_RE.search(user_message):
+            blocks.append(
+                "<shell_rules>\n"
+                "Use run_command only for allowlisted prefixes (see phaust.toml). "
+                "If a command is blocked, explain the limitation and stop — do not run "
+                "a different shell command unless the user asks for one.\n"
+                "</shell_rules>"
+            )
+
+        if _LOGGING_TASK_RE.search(user_message):
+            blocks.append(
+                "<logging_task>\n"
+                "When appending stress-test results to a log file, the self-assessment "
+                "must describe the test IDs from the session (A1, K7, etc.) — not the "
+                "read_file/edit_file logging operation. Write concrete prose; no "
+                "[placeholders] or TBD.\n"
+                "</logging_task>"
+            )
+
         return [{"role": "system", "content": "\n\n".join(blocks)}]
+
+    def _session_has_prior_assistant_reply(self) -> bool:
+        if not self.context_memory:
+            return False
+        for msg in self.context_memory.messages: # type: ignore
+            if msg.get("role") == "assistant":
+                return True
+        return False
 
     def _last_user_message(self) -> str:
         for msg in reversed(self.context_memory.messages): # type: ignore
@@ -280,6 +350,38 @@ class Agent:
                 )
         return "\n\n".join(parts)
 
+    _META_NARRATION_START = re.compile(
+        r"^(?:The user (?:is asking|wants|has asked|requested)|"
+        r"\w+ is asking me to|"
+        r"I (?:need to|should|must) (?:analyze|understand|consider|help|respond)|"
+        r"Let me (?:analyze|think|consider|break down)|"
+        r"This is a (?:broad|complex|large|non-trivial|significant|important))[\s.,!]",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _strip_meta_preamble(cls, text: str) -> str:
+        paragraphs = [p.strip() for p in re.split(r"\n\n+", text) if p.strip()]
+        while paragraphs and cls._META_NARRATION_START.match(paragraphs[0]):
+            paragraphs.pop(0)
+        return "\n\n".join(paragraphs) if paragraphs else text
+
+    @classmethod
+    def _is_meta_narration(cls, text: str) -> bool:
+        t = text.strip()
+        if not t:
+            return False
+        if cls._META_NARRATION_START.match(t):
+            return True
+        if len(t) < 500 and re.search(r"\bThe user\b", t, re.I):
+            if not re.search(
+                r"\b(I can|Let's|Here'?s|Would you|We can|Sure|Happy to|Understood)\b",
+                t,
+                re.I,
+            ):
+                return True
+        return False
+
     @staticmethod
     def _clean_reply(text: str) -> str:
         """Strip Qwen chain-of-thought / thinking blocks from user-facing text."""
@@ -296,6 +398,7 @@ class Agent:
             text,
             flags=re.IGNORECASE,
         ).strip()
+        text = Agent._strip_meta_preamble(text)
 
         if "Thinking Process" not in text and not re.search(
             r"^\d+\.\s+\*\*Analyze", text, re.MULTILINE
@@ -366,7 +469,8 @@ class Agent:
                 "role": "system",
                 "content": (
                     "Answer the user's question about the code in 2–4 short paragraphs. "
-                    "Use only names that appear in SOURCE. "
+                    "If SOURCE shows a line count in the FILE header, mention total file size "
+                    "when relevant. Use only names that appear in SOURCE. "
                     "Do not show planning, analysis, or numbered steps."
                 ),
             },
@@ -400,14 +504,67 @@ class Agent:
         return self._fallback_summary(sources)
 
     @staticmethod
+    def _to_api_message(msg: dict[str, Any]) -> dict[str, Any] | None:
+        role = msg.get("role")
+        if role not in ("system", "user", "assistant", "tool"):
+            return None
+        out: dict[str, Any] = {"role": role}
+        content = msg.get("content")
+        if content is not None and str(content).strip():
+            out["content"] = str(content)
+        tool_calls = msg.get("tool_calls")
+        if tool_calls:
+            out["tool_calls"] = tool_calls
+        if msg.get("tool_call_id"):
+            out["tool_call_id"] = msg["tool_call_id"]
+        if role == "user":
+            if not str(out.get("content") or "").strip():
+                return None
+        elif role == "assistant":
+            if tool_calls and "content" not in out:
+                out["content"] = ""
+            elif "content" not in out and not tool_calls:
+                return None
+        elif role == "tool":
+            if "content" not in out:
+                out["content"] = ""
+        elif role == "system" and "content" not in out:
+            return None
+        return out
+
+    @staticmethod
+    def _merge_consecutive_users(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        for msg in messages:
+            if (
+                msg.get("role") == "user"
+                and merged
+                and merged[-1].get("role") == "user"
+            ):
+                prev = str(merged[-1].get("content") or "")
+                cur = str(msg.get("content") or "")
+                merged[-1]["content"] = f"{prev}\n\n{cur}".strip()
+            else:
+                merged.append(msg)
+        return merged
+
+    @staticmethod
     def _sanitize_messages_for_api(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """LM Studio/Qwen reject prompts when a user turn has empty content."""
+        """LM Studio/Qwen reject prompts when user turns are missing or malformed."""
         cleaned: list[dict[str, Any]] = []
         for msg in messages:
-            role = msg.get("role")
-            if role == "user" and not str(msg.get("content") or "").strip():
+            api_msg = Agent._to_api_message(msg)
+            if api_msg is None:
                 continue
-            cleaned.append(msg)
+            if api_msg.get("role") == "user" and not str(api_msg.get("content") or "").strip():
+                continue
+            cleaned.append(api_msg)
+        cleaned = Agent._merge_consecutive_users(cleaned)
+        if not any(m.get("role") == "user" for m in cleaned):
+            raise ValueError(
+                "No user message in prompt — context may be corrupt. "
+                "Restart Phaust or clear Memory/phaust.db messages."
+            )
         return cleaned
 
     def _api_messages(self, prefix: list[dict[str, str]]) -> list[dict[str, Any]]:
@@ -430,7 +587,22 @@ class Agent:
 
     @staticmethod
     def _user_requests_file_change(message: str) -> bool:
+        if _SHELL_INTENT_RE.search(message):
+            return False
         return bool(_WRITE_INTENT_RE.search(message))
+
+    @staticmethod
+    def _is_minimal_prompt(message: str) -> bool:
+        text = message.strip()
+        if not text:
+            return False
+        if len(text) <= 12 and re.fullmatch(r"\d{1,3}", text):
+            return True
+        if len(text) <= 20 and not re.search(r"\s{2,}", text):
+            words = text.split()
+            if len(words) <= 2 and not _WRITE_INTENT_RE.search(text):
+                return True
+        return False
 
     @staticmethod
     def _user_requests_append(message: str) -> bool:
@@ -477,6 +649,74 @@ class Agent:
             if name in SHELL_TOOL_NAMES:
                 return True
         return False
+
+    @staticmethod
+    def _round_includes_memory_recall_tools(tool_calls: list[dict[str, Any]]) -> bool:
+        for call in tool_calls:
+            name = call.get("function", {}).get("name")
+            if name in MEMORY_RECALL_TOOL_NAMES:
+                return True
+        return False
+
+    @staticmethod
+    def _format_memory_recall_outcome(results: list[dict[str, Any]]) -> str | None:
+        lines: list[str] = []
+        for result in results:
+            if result.get("error"):
+                err = result["error"]
+                hint = result.get("hint")
+                lines.append(str(err) + (f" {hint}" if hint else ""))
+                continue
+            if result.get("text") and result.get("id"):
+                body = str(result["text"])
+                if len(body) > 2400:
+                    body = body[:2400] + "\n… [episode truncated]"
+                lines.append(f"Episode {result['id']}:\n{body}")
+                continue
+            if result.get("episode"):
+                ep = result["episode"]
+                body = str(ep.get("text") or "")
+                if len(body) > 2400:
+                    body = body[:2400] + "\n… [episode truncated]"
+                lines.append(
+                    "That value is an episode id, not a fact key.\n\n"
+                    f"Episode {ep.get('id')}:\n{body}"
+                )
+                continue
+            if result.get("key") is not None:
+                val = result.get("value")
+                if val is not None:
+                    lines.append(f"{result['key']} = {val}")
+                else:
+                    hint = result.get("hint") or "Use recall_episode for episode UUIDs."
+                    lines.append(f"No fact stored for `{result['key']}`. {hint}")
+                continue
+            if "results" in result:
+                hits = result.get("results") or []
+                if not hits:
+                    lines.append("No matching episodes in semantic memory.")
+                else:
+                    for hit in hits[:8]:
+                        score = hit.get("score", "?")
+                        eid = hit.get("id", "?")
+                        text = str(hit.get("text") or "")[:240]
+                        lines.append(f"- ({score}) {eid}: {text}")
+                continue
+            if result.get("episodes") is not None:
+                eps = result.get("episodes") or []
+                if not eps:
+                    lines.append("No archived episodes yet.")
+                else:
+                    for ep in eps[:12]:
+                        lines.append(f"- {ep.get('id')}: {ep.get('preview', '')}")
+                continue
+            if result.get("keys") is not None:
+                keys = result.get("keys") or []
+                if not keys:
+                    lines.append("No long-term facts stored.")
+                else:
+                    lines.append("Stored fact keys: " + ", ".join(keys))
+        return "\n\n".join(lines) if lines else None
 
     _WRITE_NUDGE = (
         "Apply the file change now using create_file, write_file, edit_file, or delete_file "
@@ -533,7 +773,11 @@ class Agent:
                     "(you declined at the prompt)."
                 )
             if result.get("error") and result.get("command"):
-                return f"Command failed: {result['error']}"
+                hint = result.get("hint")
+                msg = f"Could not run `{result.get('command')}`: {result['error']}"
+                if hint:
+                    msg += f"\n\n{hint}"
+                return msg
         return "Command proposal reviewed."
 
     @staticmethod
@@ -659,6 +903,11 @@ class Agent:
         wants_edit = self._user_requests_file_change(user_message)
         wants_create = self._user_requests_create(user_message)
         wants_memorize = self._user_requests_memorize(user_message)
+        wants_recall = (
+            self._user_asks_about_past(user_message)
+            or bool(_EPISODE_UUID_RE.search(user_message))
+            or bool(re.search(r"\brecall\b", user_message, re.I))
+        )
         if wants_memorize and not self.context_memory.memory_writes_enabled(): # type: ignore
             reply = (
                 "Memory writes are disabled this session. "
@@ -678,6 +927,9 @@ class Agent:
         write_proposals = 0
         write_nudges = 0
         memorize_nudges = 0
+        meta_nudges = 0
+        memory_recall_this_turn = False
+        shell_allowlist_blocked = False
         read_paths: list[str] = []
         empty_write_paths: set[str] = set()
         file_snapshots: dict[str, str] = {}
@@ -710,7 +962,20 @@ class Agent:
                 json=payload,
                 timeout=300,
             )
-            self._raise_for_llm_error(r)
+            try:
+                self._raise_for_llm_error(r)
+            except requests.HTTPError as exc:
+                if "No user query found" in str(exc):
+                    self.context_memory.db.repair_message_history() # type: ignore
+                    self.context_memory.db.pop_last_message() # type: ignore
+                    raise requests.HTTPError(
+                        f"{exc}\n"
+                        "  → Repaired context and rolled back this message. "
+                        "Try again (do not press Enter on an empty prompt).",
+                        response=getattr(exc, "response", None),
+                    ) from exc
+                self.context_memory.db.pop_last_message() # type: ignore
+                raise
             msg = r.json()["choices"][0]["message"]
             tool_calls = list(msg.get("tool_calls") or [])
             if not tool_calls:
@@ -769,10 +1034,26 @@ class Agent:
                     )
                     self._persist()
                     continue
-                self._persist()
-                return self._message_text(msg) or (
+                reply = self._message_text(msg) or (
                     "(no response from model — check LM Studio has a chat model loaded)"
                 )
+                if self._is_meta_narration(reply) and meta_nudges < 1 and not memory_recall_this_turn:
+                    meta_nudges += 1
+                    print("  → meta narration — nudging model…")
+                    self.context_memory.append_message( # type: ignore
+                        {
+                            "role": "user",
+                            "content": (
+                                "Respond to George directly in second person. "
+                                "Do not narrate what 'the user' is asking — give your "
+                                "actual answer or next step."
+                            ),
+                        }
+                    )
+                    self._persist()
+                    continue
+                self._persist()
+                return reply
 
             tool_rounds += 1
             if tool_rounds > self.max_tool_rounds:
@@ -786,6 +1067,8 @@ class Agent:
                 if write_declined and name in WRITE_TOOL_NAMES:
                     continue
                 if command_declined and name in SHELL_TOOL_NAMES:
+                    continue
+                if shell_allowlist_blocked and name in SHELL_TOOL_NAMES:
                     continue
                 if (
                     wants_edit
@@ -814,6 +1097,10 @@ class Agent:
                         command_applied = True
                     if result.get("cancelled"):
                         command_declined = True
+                    if result.get("error") == "Command not on allowlist":
+                        shell_allowlist_blocked = True
+                if name in MEMORY_RECALL_TOOL_NAMES:
+                    memory_recall_this_turn = True
                 if name == "memorize" and result.get("stored"):
                     memory_stored = True
                 if name == "remember" and result.get("saved"):
@@ -830,6 +1117,27 @@ class Agent:
             read_paths = self._paths_read_this_round(round_results) or read_paths
             empty_write_paths |= self._empty_files_from_results(round_results)
             file_snapshots.update(self._snapshots_from_results(round_results))
+
+            if (
+                shell_allowlist_blocked
+                and not command_applied
+                and not command_declined
+            ):
+                reply = self._format_command_outcome(round_results)
+                self.context_memory.append_message( # type: ignore
+                    {"role": "assistant", "content": reply}
+                )
+                self._persist()
+                return reply
+
+            if self._round_includes_memory_recall_tools(tool_calls):
+                recall_reply = self._format_memory_recall_outcome(round_results)
+                if recall_reply and not wants_edit:
+                    self.context_memory.append_message( # type: ignore
+                        {"role": "assistant", "content": recall_reply}
+                    )
+                    self._persist()
+                    return recall_reply
 
             if write_applied:
                 reply = self._format_write_outcome(round_results)
@@ -1030,6 +1338,22 @@ def _print_tool_result(name: str | None, result: dict[str, Any]) -> None:
             print(f"     ○ {name}: {result.get('reason', 'skipped')}")
         elif result.get("error"):
             print(f"     ✗ {result['error']}")
+    elif name in ("recall_episode", "recall"):
+        if result.get("error"):
+            print(f"     ✗ {result['error']}")
+            if result.get("hint"):
+                print(f"       {result['hint']}")
+        elif result.get("text"):
+            eid = result.get("id", "?")
+            chars = len(str(result.get("text") or ""))
+            print(f"     ✓ episode {eid} ({chars} chars)")
+        elif result.get("value") is not None:
+            print(f"     ✓ {result.get('key')} = {result.get('value')}")
+        elif result.get("key"):
+            print(f"     ○ no fact for {result.get('key')}")
+    elif name == "search_semantic":
+        hits = result.get("results") or []
+        print(f"     ✓ {len(hits)} hit(s)")
     elif name in WRITE_TOOL_NAMES:
         if result.get("applied") and result.get("deleted"):
             print(f"     ✓ deleted {result.get('path')}")

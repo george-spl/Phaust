@@ -49,9 +49,5 @@ def build_system_prompt(
     agent_name: str,
     instructions: str,
 ) -> str:
-    """Combine identity line with AGENTS.md (or fallback) instructions."""
-    header = (
-        f"You are {agent_name}, a local assistant for this workspace. "
-        "Follow the project rules below."
-    )
-    return f"{header}\n\n{instructions}"
+    """Combine agent name with AGENTS.md (or fallback) instructions."""
+    return f"# System instructions for {agent_name}\n\n{instructions}"

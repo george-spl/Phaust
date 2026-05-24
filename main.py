@@ -1,5 +1,4 @@
 """Phaust-1 — local agent entry point."""
-
 from __future__ import annotations
 
 import datetime
@@ -7,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-from phaust import Agent, run
+from phaust.agent import Agent, run
 from phaust.config import load_config
 from phaust.prompts import build_system_prompt, load_agents_instructions
 from phaust.workspace import Workspace, register_readonly_tools

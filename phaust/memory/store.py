@@ -347,6 +347,50 @@ class MemoryStore:
             conn.commit()
             return int(cur.rowcount)
 
+    def pop_last_message(self) -> bool:
+        """Remove the most recent message (e.g. rollback a failed LLM turn)."""
+        last_id = self.last_message_id()
+        if last_id is None:
+            return False
+        with self._connect() as conn:
+            conn.execute("DELETE FROM messages WHERE id = ?", (last_id,))
+            conn.commit()
+        return True
+
+    def repair_message_history(self) -> dict[str, int]:
+        """
+        Fix SQLite context rows that break Qwen/LM Studio jinja templates.
+        - Drop orphan user at end (crashed turn before assistant reply)
+        - Drop dangling tool / tool-call assistant at end
+        """
+        stats = {"empty_users": 0, "orphan_users": 0, "dangling_tail": 0}
+        stats["empty_users"] = self.delete_empty_user_messages()
+
+        while True:
+            msgs = self.get_messages()
+            if not msgs or msgs[-1].get("role") != "user":
+                break
+            self.pop_last_message()
+            stats["orphan_users"] += 1
+
+        while True:
+            msgs = self.get_messages()
+            if not msgs:
+                break
+            last = msgs[-1]
+            role = last.get("role")
+            if role == "tool":
+                self.pop_last_message()
+                stats["dangling_tail"] += 1
+                continue
+            if role == "assistant" and last.get("tool_calls"):
+                self.pop_last_message()
+                stats["dangling_tail"] += 1
+                continue
+            break
+
+        return stats
+
     def message_count(self) -> int:
         with self._connect() as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM messages").fetchone()

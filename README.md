@@ -118,7 +118,7 @@ Edit **`phaust.toml`** in the project root (loaded on startup). Override path wi
 
 | Symptom | Cause / fix |
 |---------|-------------|
-| `400` / “No user query found” | Empty user message in context — restart; Phaust skips blank input and cleans old rows on startup. |
+| `400` / “No user query found” | Corrupt context in SQLite (often a crashed turn). Restart Phaust — it auto-repairs. Or: `sqlite3 Memory\phaust.db "DELETE FROM messages;"` |
 | Plan to edit but no diff | Model replied with text only — one nudge, then XML tool blocks are parsed if needed. |
 | Raw `<tool_call>` in the reply | Qwen text-format tools — parsed when possible; stripped from final text. |
 | `n` loops forever | Fixed: one decline stops the turn; max 2 write previews per message. |

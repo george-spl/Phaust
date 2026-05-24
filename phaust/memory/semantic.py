@@ -141,6 +141,11 @@ class SemanticMemory:
         }
 
     def list_episode_summaries(self, limit: int = 20) -> list[dict[str, Any]]:
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 20
+        limit = max(1, min(limit, 100))
         entries = self.db.list_episodes()
         out: list[dict[str, Any]] = []
         for entry in entries[-limit:]:

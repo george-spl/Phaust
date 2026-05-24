@@ -102,6 +102,13 @@ class ContextMemory:
         removed = self.db.delete_empty_user_messages()
         if removed:
             print(f"Memory: removed {removed} empty user message(s) from context")
+        repaired = self.db.repair_message_history()
+        extra = repaired["orphan_users"] + repaired["dangling_tail"]
+        if extra:
+            print(
+                f"Memory: repaired context ({repaired['orphan_users']} orphan user, "
+                f"{repaired['dangling_tail']} dangling tool tail)"
+            )
         start = self.db.get_session("_session_start_id")
         if isinstance(start, int):
             self._session_start_message_id = start
