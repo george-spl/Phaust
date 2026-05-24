@@ -1,4 +1,6 @@
-"""Phaust-1 — local agent entry point."""
+"""Phaust-1 — local agent entry point."""  # Phaust stress test H1
+# Phaust H5 write test
+
 from __future__ import annotations
 
 import datetime
@@ -45,7 +47,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
         max_tool_rounds=config.max_tool_rounds,
         max_write_proposals=config.max_write_proposals,
         require_write_approval=config.require_write_approval,
-        shell_config=config.shell,
+        shell_config=config.shell, # type: ignore
     )
     agent.config_path = config_path
     agent.config_name = config.name
