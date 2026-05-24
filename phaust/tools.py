@@ -1,7 +1,32 @@
 import inspect
 import json
 from dataclasses import dataclass, field
+from difflib import get_close_matches
 from typing import Annotated, Any, Callable, Final, Union, get_args, get_origin
+
+_TOOL_ALIASES: dict[str, str] = {
+    "ls": "list_directory",
+    "list_dir": "list_directory",
+    "directory_list": "list_directory",
+    "run": "run_command",
+    "execute": "run_command",
+    "shell": "run_command",
+    "read": "read_file",
+    "write": "write_file",
+    "delete": "delete_file",
+}
+
+
+def _tool_not_found_hint(name: str | None, tools: dict[str, Callable[..., Any]]) -> str | None:
+    if not name:
+        return None
+    canonical = _TOOL_ALIASES.get(name)
+    if canonical and canonical in tools:
+        return f"Did you mean `{canonical}`?"
+    matches = get_close_matches(name, tools.keys(), n=3, cutoff=0.6)
+    if matches:
+        return f"Available similar tools: {', '.join(f'`{m}`' for m in matches)}"
+    return None
 
 
 @dataclass
@@ -105,8 +130,15 @@ class Tools:
         name = fn.get("name")
         args_raw = fn.get("arguments") or "{}"
 
+        if name in _TOOL_ALIASES:
+            name = _TOOL_ALIASES[name]
+
         if name not in self.tools:
-            return {"error": f"Tool '{name}' not found"}
+            hint = _tool_not_found_hint(name, self.tools)
+            out: dict[str, Any] = {"error": f"Tool '{name}' not found"}
+            if hint:
+                out["hint"] = hint
+            return out
 
         try:
             args = json.loads(args_raw)

@@ -3,40 +3,54 @@
 from __future__ import annotations
 
 import datetime
+import re
 from pathlib import Path
 from typing import Annotated
 
-from phaust import Agent, run
+from phaust.agent import Agent, run
+from phaust.config import load_config
+from phaust.prompts import build_system_prompt, load_agents_instructions
 from phaust.workspace import Workspace, register_readonly_tools
 from phaust.workspace_write import register_write_tools
+from phaust.shell import register_shell_tools
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 
+_EPISODE_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
 
 def build_agent(workspace_root: Path | None = None) -> Agent:
-    workspace = Workspace(workspace_root or WORKSPACE_ROOT)
+    project_root = workspace_root or WORKSPACE_ROOT
+    config, config_path = load_config(project_root=project_root)
+    ws_root = config.workspace_root or project_root
 
+    instructions, agents_path = load_agents_instructions(ws_root, config.agents_md)
+    system_prompt = build_system_prompt(config.name, instructions)
+
+    workspace = Workspace(ws_root)
     agent = Agent(
         workspace=workspace,
-        system_prompt=(
-            "Your name is Phaust-1 (Predictive Heuristic Autonomous Utility System Technology, iteration 1). "
-            "Only greet the user at start up, not every message"
-            "Tools: read_file, list_files, grep, edit_file, write_file, and memory tools. "
-            "For code questions: read_file first; do not guess file contents. "
-            "When the user asks to change a file: read_file if needed, then call edit_file or write_file — never stop after read_file with only a text plan. "
-            "Use the tool API (function calls), not XML or markdown describing tools. "
-            "For adding one line or a comment, use edit_file (not a full-file write_file). "
-            "If read_file shows an empty file, write only the new lines requested — plain text, no line-number prefixes, no content from old chat. "
-            "To append lines, edit_file with old_string copied exactly from read_file (no invented line numbers or prefixes). "
-            "Put new comments where the user implies (e.g. under the title or before a named section), not at EOF unless they want that. "
-            "edit_file replaces exactly one unique old_string in a file. "
-            "write_file creates or overwrites a whole file. "
-            "IMPORTANT: edit_file and write_file only PREVIEW changes until the user approves in the terminal; "
-            "tell the user to review the diff and answer y/N — nothing is saved until they approve. "
-            "Never write under Memory/, .venv/, or .git/. "
-            "Talk like an English gentleman; be precise and helpful."
-        ),
+        system_prompt=system_prompt,
+        model=config.model,
+        base_url=config.base_url,
+        api_key=config.api_key,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        max_messages=config.max_messages,
+        compact_batch=config.compact_batch,
+        max_episodes=config.max_episodes,
+        semantic_top_k=config.semantic_top_k,
+        max_tool_rounds=config.max_tool_rounds,
+        max_write_proposals=config.max_write_proposals,
+        require_write_approval=config.require_write_approval,
+        shell_config=config.shell, # type: ignore
     )
+    agent.config_path = config_path
+    agent.config_name = config.name
+    agent.agents_md_path = agents_path
 
     @agent.context
     def time_context() -> str:
@@ -48,6 +62,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     register_readonly_tools(agent, workspace)
     register_write_tools(agent, workspace)
+    register_shell_tools(agent, workspace, config.shell)
 
     assert agent.long_term and agent.semantic and agent.context_memory
     lt = agent.long_term
@@ -65,7 +80,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.tool
     def remember(key: str, value: str) -> dict:
-        """Store an explicit fact in long-term memory."""
+        """Store one key-value fact in long-term memory (e.g. key=user_name, value=George). Not for episodes or long text — use memorize."""
         blocked = _memory_writes_blocked()
         if blocked:
             return blocked
@@ -73,7 +88,21 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.tool
     def recall(key: str) -> dict:
-        """Retrieve a fact from long-term memory by key."""
+        """Retrieve a fact from long-term memory by key (snake_case). Not for episode UUIDs — use recall_episode."""
+        key = key.strip()
+        if _EPISODE_ID_RE.match(key):
+            episode = sem.recall_episode(key)
+            if not episode.get("error"):
+                return {
+                    "key": key,
+                    "value": None,
+                    "hint": "That is an episode id, not a fact key.",
+                    "episode": episode,
+                }
+            return {
+                **lt.recall(key),
+                "hint": "Looks like an episode UUID. Use recall_episode or search_semantic.",
+            }
         return lt.recall(key)
 
     @agent.tool
@@ -91,7 +120,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
         text: str,
         tags: Annotated[str | None, "Comma-separated tags, optional"] = None,
     ) -> dict:
-        """Store text in semantic memory for later similarity recall."""
+        """Store a note or conversation snippet in episodic semantic memory. Use text=..., not remember()."""
         blocked = _memory_writes_blocked()
         if blocked:
             return blocked
@@ -100,8 +129,18 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.tool
     def search_semantic(query: str, top_k: int = 5) -> dict:
-        """Search semantic memory by meaning/similarity."""
+        """Search episodic memory by meaning/similarity (not exact UUID lookup)."""
         return {"results": sem.search(query, top_k=top_k)}
+
+    @agent.tool
+    def recall_episode(entry_id: str) -> dict:
+        """Retrieve one archived conversation episode by its UUID."""
+        return sem.recall_episode(entry_id)
+
+    @agent.tool
+    def list_episodes(limit: int = 20) -> dict:
+        """List recent episode ids with short previews."""
+        return {"episodes": sem.list_episode_summaries(limit=limit)}
 
     @agent.tool
     def forget_semantic(entry_id: str) -> dict:

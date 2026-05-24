@@ -9,9 +9,35 @@ from typing import Any, Callable, TYPE_CHECKING
 MEMORY_WRITES_DISABLED = "memory_writes_disabled"
 
 _NO_MEMORY_RE = re.compile(
-    r"\bremember\s+nothing\b|\b(?:don'?t|do\s+not)\s+(?:remember|store|save)\b"
+    r"\bremember\s+nothing(?:\s+(?:this|for)\s+session)?\b"
+    r"|\b(?:don'?t|do\s+not)\s+(?:remember|store|save)\s+"
+    r"(?:anything|this|it|stuff|that|what\s+we\s+(?:said|discussed))"
+    r"(?:\s+(?:this|for)\s+session|\s+session)?\b"
+    r"|\b(?:don'?t|do\s+not)\s+(?:remember|store|save)\s+(?:anything\s+)?(?:this\s+)?session\b"
     r"|\bno\s+(?:new\s+)?(?:memory|facts?)\s+(?:this\s+)?session\b"
-    r"|\bwithout\s+(?:saving|storing)\s+memory\b",
+    r"|\bwithout\s+(?:saving|storing)\s+memory\b"
+    r"|\bprivate\s+session\b",
+    re.IGNORECASE,
+)
+
+# Describing/logging a test (e.g. "scores for remember nothing, enable") — not an opt-out.
+_NO_MEMORY_LOGGING_MENTION_RE = re.compile(
+    r"\b(?:scores?|self-assessment|block\s+[a-z0-9]+|R5\w*|append\b.*\b(?:scores?|regression))"
+    r".{0,80}\bremember\s+nothing\b"
+    r"|\bremember\s+nothing\b.{0,40}\b(?:,\s*enable|enable\s+remembering)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_ENABLE_MEMORY_RE = re.compile(
+    r"\b(?:remember|save|store)\s+(?:things|stuff|memories|this\s+session|normally|everything)\s+again\b"
+    r"|\b(?:enable|turn\s+on)\s+(?:memory|remembering)(?:\s+writes?)?(?:\s+again)?\b"
+    r"|\bturn\s+(?:on|back)\s+remembering\b"
+    r"|\bsave\s+(?:this\s+)?session(?:\s+(?:to\s+memory|normally))?\b",
+    re.IGNORECASE,
+)
+
+_RHETORICAL_MEMORY_RE = re.compile(
+    r"\b(?:you|phaust)\s+don'?t\s+remember\b|\bdo\s+you\s+remember\b",
     re.IGNORECASE,
 )
 
@@ -59,7 +85,15 @@ class ContextMemory:
 
     @staticmethod
     def user_requests_no_memory(message: str) -> bool:
+        if _RHETORICAL_MEMORY_RE.search(message):
+            return False
+        if _NO_MEMORY_LOGGING_MENTION_RE.search(message):
+            return False
         return bool(_NO_MEMORY_RE.search(message))
+
+    @staticmethod
+    def user_requests_memory_again(message: str) -> bool:
+        return bool(_ENABLE_MEMORY_RE.search(message))
 
     def memory_writes_enabled(self) -> bool:
         return not bool(self.get_session(MEMORY_WRITES_DISABLED, False))
@@ -78,6 +112,13 @@ class ContextMemory:
         removed = self.db.delete_empty_user_messages()
         if removed:
             print(f"Memory: removed {removed} empty user message(s) from context")
+        repaired = self.db.repair_message_history()
+        extra = repaired["orphan_users"] + repaired["dangling_tail"]
+        if extra:
+            print(
+                f"Memory: repaired context ({repaired['orphan_users']} orphan user, "
+                f"{repaired['dangling_tail']} dangling tool tail)"
+            )
         start = self.db.get_session("_session_start_id")
         if isinstance(start, int):
             self._session_start_message_id = start
