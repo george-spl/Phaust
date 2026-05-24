@@ -30,6 +30,6 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | **Tasks** | Done — multi-step mode, checkpoints, REPL commands |
 | **Memory** | Done — hybrid retrieval, full search_semantic output |
 | **Models** | Planned — per-task model profiles |
-| **Packaging** | Planned — optional `phaust` CLI entry point |
+| **Packaging** | **Done** — `pip install -e .` and `phaust` CLI |
 
 Contributions welcome on branch `experimental`.

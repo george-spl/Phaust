@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phaust-agent"
+version = "2.0.0"
+description = "Phaust-2 — local AI agent with SQLite memory, workspace tools, and approval gates"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "George" }]
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+phaust = "phaust.cli:main"
+
+[project.urls]
+Repository = "https://github.com/george-spl/Phaust-1"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["phaust*"]

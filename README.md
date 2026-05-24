@@ -14,16 +14,27 @@ A local, private AI agent that runs in your terminal. It uses a local LLM (via [
 
 ## Setup
 
+### Option A — install the CLI (recommended)
+
 ```powershell
 cd D:\github\Phaust-1
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e .
 ```
 
-Start your LLM server, then:
+Start your LLM server, then from your project directory (where `phaust.toml` lives):
 
 ```powershell
+phaust
+```
+
+Use `phaust -C D:\path\to\project` to point at a different workspace. `python main.py` still works for this repo.
+
+### Option B — run from source without installing
+
+```powershell
+pip install -r requirements.txt
 python main.py
 ```
 

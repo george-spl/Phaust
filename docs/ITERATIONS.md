@@ -27,6 +27,8 @@ Built on Phaust-1's safety model and tool set. New structure:
 
 Same George, same workspace, same approval gates — cleaner internals and task/retrieval features.
 
+**Install:** `pip install -e .` from the repo, then run `phaust` in any directory with `phaust.toml`.
+
 ## Future
 
 See [ROADMAP.md](ROADMAP.md) for packaging, model profiles, and memory review UI.
