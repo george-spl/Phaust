@@ -73,15 +73,27 @@ Cross-session file recall (e.g. `stress_c1.txt`) uses **hybrid ranking**:
 
 Configure in `phaust.toml` `[memory]`: `hybrid_retrieval`, `filename_boost`, `lexical_weight`, `query_expansion`.
 
-## What stays in `agent.py` (for now)
+## Turn runner (`phaust/turn_runner.py`)
+
+- Explain-mode **synthesis** (second LLM pass from read/grep grounding)
+- API message sanitization for LM Studio / Qwen
+- Optional **`[llm.synthesis]`** profile in `phaust.toml` (falls back to main `[llm]`)
+
+## Reply cleanup (`phaust/reply.py`)
+
+- Strip thinking blocks and meta-narration preambles from user-facing text
+
+## Tool recovery (`orchestration/policy.py`)
+
+- After a tool round with recoverable errors (hint or read-before-write), one **recovery nudge** per turn retries instead of silent failure
+
+## What stays in `agent.py`
 
 - LLM request/response and tool-call parsing
 - Write/shell approval UX
 - Memory compaction and session lifecycle
-- Synthesis pass after read_file (explain mode)
 - Workspace path normalization and read-before-write gate
-
-Future Phaust-2 work can extract **synthesis** into `turn_runner.py` without growing `agent.py` again.
+- `chat()` loop wiring orchestration + turn_runner
 
 ## Adding a new behavior
 

@@ -11,6 +11,13 @@ api_key = "NO_API_KEY"
 temperature = 0.3
 max_tokens = 8192
 
+# Optional: different model for explain-mode synthesis (read_file → answer).
+# Omit [llm.synthesis] to use the main model above.
+# [llm.synthesis]
+# model = "qwen/qwen3.5-9b"
+# temperature = 0.2
+# max_tokens = 1024
+
 [workspace]
 # Relative to this file's directory (project root)
 root = "."

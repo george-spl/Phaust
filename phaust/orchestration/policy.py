@@ -19,6 +19,7 @@ class NudgeBudget:
     recall: int = 0
     shell_staging: int = 0
     meta: int = 0
+    tool_recovery: int = 0
 
 
 def round_includes_tools(tool_calls: list[dict[str, Any]], names: frozenset[str]) -> bool:
@@ -127,3 +128,37 @@ def should_return_recall_outcome(
         and not intent.wants_write
         and round_includes_tools(tool_calls, MEMORY_RECALL_TOOLS)
     )
+
+
+def is_recoverable_tool_error(result: dict[str, Any]) -> bool:
+    if result.get("cancelled") or result.get("skipped"):
+        return False
+    if not result.get("error"):
+        return False
+    if result.get("hint"):
+        return True
+    err = str(result.get("error"))
+    return "Call read_file" in err
+
+
+def build_tool_recovery_nudge(round_results: list[dict[str, Any]]) -> str | None:
+    errors = [r for r in round_results if is_recoverable_tool_error(r)]
+    if not errors:
+        return None
+    lines = [
+        "One or more tools failed. Follow the hint and retry the tool call.",
+        "Do not give a long apology — fix the issue and act.",
+    ]
+    for result in errors:
+        lines.append(f"- {result.get('error')}")
+        hint = result.get("hint")
+        if hint:
+            lines.append(f"  Hint: {hint}")
+    return "\n".join(lines)
+
+
+def should_nudge_tool_recovery(
+    round_results: list[dict[str, Any]],
+    budget: NudgeBudget,
+) -> bool:
+    return budget.tool_recovery < 1 and build_tool_recovery_nudge(round_results) is not None

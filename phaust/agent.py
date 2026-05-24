@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 import requests
 
+from phaust.config import SynthesisConfig
 from phaust.memory import (
     Compactor,
     ContextMemory,
@@ -23,7 +23,6 @@ from phaust.shell import (
     ShellConfig,
     execute_command,
     print_command_proposal,
-    print_command_result,
     prompt_run,
 )
 from phaust.orchestration import (
@@ -45,11 +44,13 @@ from phaust.orchestration import (
 )
 from phaust.orchestration.constants import MEMORY_RECALL_TOOLS, MEMORY_STORE_TOOLS
 from phaust.orchestration.policy import (
+    build_tool_recovery_nudge,
     round_includes_tools,
     should_nudge_logging,
     should_nudge_memorize,
     should_nudge_recall,
     should_nudge_shell_staging,
+    should_nudge_tool_recovery,
     should_nudge_write,
 )
 from phaust.orchestration.nudges import (
@@ -69,8 +70,15 @@ from phaust.workspace_write import (
 
 from phaust.tasks import TaskManager, build_task_directive, handle_task_command
 from phaust.tasks.models import TaskStatus
-
-MAX_SYNTHESIS_CHARS = 12_000
+from phaust.reply import is_meta_narration, message_text
+from phaust.tool_ui import print_tool_result
+from phaust.turn_runner import (
+    grounding_from_tool_results,
+    llm_extra,
+    raise_for_llm_error,
+    sanitize_messages_for_api,
+    synthesize_from_sources,
+)
 
 MEMORY_RECALL_TOOL_NAMES = MEMORY_RECALL_TOOLS
 MEMORY_STORE_TOOL_NAMES = MEMORY_STORE_TOOLS
@@ -103,6 +111,7 @@ class Agent:
     config_name: str = "Phaust-2"
     agents_md_path: Path | None = None
     task_manager: TaskManager | None = None
+    synthesis: SynthesisConfig = field(default_factory=SynthesisConfig)
     _files_read_this_turn: set[str] = field(default_factory=set, repr=False)
 
     def __post_init__(self) -> None:
@@ -227,261 +236,20 @@ class Agent:
                 return str(msg.get("content") or "")
         return ""
 
-    @staticmethod
-    def _grounding_from_tool_results(results: list[dict[str, Any]]) -> str:
-        parts: list[str] = []
-        for result in results:
-            if result.get("error"):
-                continue
-            if result.get("content") and result.get("path"):
-                parts.append(
-                    f"### FILE: {result['path']} ({result.get('total_lines', '?')} lines)\n"
-                    f"{result['content']}"
-                )
-            elif result.get("matches"):
-                lines = [
-                    f"{m['file']}:{m['line']}: {m['text']}"
-                    for m in result["matches"][:40]
-                ]
-                parts.append(
-                    f"### GREP: {result.get('pattern', '')}\n" + "\n".join(lines)
-                )
-        return "\n\n".join(parts)
-
-    _META_NARRATION_START = re.compile(
-        r"^(?:The user (?:is asking|wants|has asked|requested)|"
-        r"\w+ is asking me to|"
-        r"I (?:need to|should|must) (?:analyze|understand|consider|help|respond)|"
-        r"Let me (?:analyze|think|consider|break down)|"
-        r"This is a (?:broad|complex|large|non-trivial|significant|important))[\s.,!]",
-        re.IGNORECASE,
-    )
-
-    @classmethod
-    def _strip_meta_preamble(cls, text: str) -> str:
-        paragraphs = [p.strip() for p in re.split(r"\n\n+", text) if p.strip()]
-        while paragraphs and cls._META_NARRATION_START.match(paragraphs[0]):
-            paragraphs.pop(0)
-        return "\n\n".join(paragraphs) if paragraphs else text
-
-    @classmethod
-    def _is_meta_narration(cls, text: str) -> bool:
-        t = text.strip()
-        if not t:
-            return False
-        if cls._META_NARRATION_START.match(t):
-            return True
-        if len(t) < 500 and re.search(r"\bThe user\b", t, re.I):
-            if not re.search(
-                r"\b(I can|Let's|Here'?s|Would you|We can|Sure|Happy to|Understood)\b",
-                t,
-                re.I,
-            ):
-                return True
-        return False
-
-    @staticmethod
-    def _clean_reply(text: str) -> str:
-        """Strip Qwen chain-of-thought / thinking blocks from user-facing text."""
-        text = text.strip()
-        text = re.sub(
-            r"<think(?:ing)?>[\s\S]*?</think(?:ing)?>",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        ).strip()
-        text = re.sub(
-            r"<tool_call>[\s\S]*?</tool_call>",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        ).strip()
-        text = Agent._strip_meta_preamble(text)
-
-        if "Thinking Process" not in text and not re.search(
-            r"^\d+\.\s+\*\*Analyze", text, re.MULTILINE
-        ):
-            return text
-
-        draft = re.search(
-            r"\*Draft:\*\*\s*\n([\s\S]+?)(?:\n\d+\.\s+\*\*Review|\n\*\*Review against|$)",
-            text,
+    def _synthesis_llm(self) -> tuple[str, str, str, float, int]:
+        s = self.synthesis
+        return (
+            s.model or self.model,
+            (s.base_url or self.base_url).rstrip("/"),
+            s.api_key or self.api_key,
+            s.temperature,
+            s.max_tokens,
         )
-        if draft:
-            body = draft.group(1).strip()
-            body = re.sub(r"^\*?Draft:?\*?\s*", "", body)
-            if len(body) > 80:
-                return body
-
-        paragraphs = [p.strip() for p in re.split(r"\n\n+", text) if len(p.strip()) > 100]
-        for para in reversed(paragraphs):
-            if re.match(r"^\d+\.", para):
-                continue
-            if any(
-                skip in para[:60]
-                for skip in ("Analyze the", "Constraint", "Drafting the", "**")
-            ):
-                continue
-            return para
-        return text
-
-    @staticmethod
-    def _message_text(msg: dict[str, Any]) -> str:
-        """Prefer final content; avoid dumping raw reasoning traces to the user."""
-        content = msg.get("content")
-        if content and str(content).strip():
-            return Agent._clean_reply(str(content))
-
-        for key in ("reasoning_content", "reasoning"):
-            val = msg.get(key)
-            if val and str(val).strip():
-                return Agent._clean_reply(str(val))
-        return ""
-
-    @staticmethod
-    def _llm_extra() -> dict[str, Any]:
-        return {"chat_template_kwargs": {"enable_thinking": False}}
-
-    @staticmethod
-    def _truncate_sources(sources: str, max_chars: int = MAX_SYNTHESIS_CHARS) -> str:
-        if len(sources) <= max_chars:
-            return sources
-        return sources[:max_chars] + "\n… [truncated for context limit]"
-
-    @staticmethod
-    def _fallback_summary(sources: str) -> str:
-        imports = re.findall(r"^from .+|^import .+", sources, re.MULTILINE)[:12]
-        symbols = re.findall(r"^(?:class|def) \w+", sources, re.MULTILINE)[:25]
-        lines = ["The model returned an empty reply. From the file read:"]
-        if symbols:
-            lines.append("Symbols: " + ", ".join(symbols))
-        if imports:
-            lines.append("Imports: " + "; ".join(imports))
-        return "\n".join(lines)
-
-    def _synthesize_from_sources(self, question: str, sources: str) -> str:
-        """Second pass: answer only from file text (no tools — reduces hallucination)."""
-        sources = self._truncate_sources(sources)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Answer the user's question about the code in 2–4 short paragraphs. "
-                    "If SOURCE shows a line count in the FILE header, mention total file size "
-                    "when relevant. Use only names that appear in SOURCE. "
-                    "Do not show planning, analysis, or numbered steps."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Question: {question}\n\n--- SOURCE ---\n{sources}\n--- END SOURCE ---",
-            },
-            # LM Studio / Qwen workaround: skip reasoning-only empty content
-            {"role": "assistant", "content": " \n"},
-        ]
-        r = requests.post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.model,
-                "messages": messages,
-                "temperature": 0.2,
-                "max_tokens": 1024,
-                "extra_body": self._llm_extra(),
-            },
-            timeout=300,
-        )
-        r.raise_for_status()
-        answer = self._message_text(r.json()["choices"][0]["message"])
-        if answer:
-            return answer
-        print("     ⚠ synthesis returned empty — using fallback summary")
-        return self._fallback_summary(sources)
-
-    @staticmethod
-    def _to_api_message(msg: dict[str, Any]) -> dict[str, Any] | None:
-        role = msg.get("role")
-        if role not in ("system", "user", "assistant", "tool"):
-            return None
-        out: dict[str, Any] = {"role": role}
-        content = msg.get("content")
-        if content is not None and str(content).strip():
-            out["content"] = str(content)
-        tool_calls = msg.get("tool_calls")
-        if tool_calls:
-            out["tool_calls"] = tool_calls
-        if msg.get("tool_call_id"):
-            out["tool_call_id"] = msg["tool_call_id"]
-        if role == "user":
-            if not str(out.get("content") or "").strip():
-                return None
-        elif role == "assistant":
-            if tool_calls and "content" not in out:
-                out["content"] = ""
-            elif "content" not in out and not tool_calls:
-                return None
-        elif role == "tool":
-            if "content" not in out:
-                out["content"] = ""
-        elif role == "system" and "content" not in out:
-            return None
-        return out
-
-    @staticmethod
-    def _merge_consecutive_users(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        merged: list[dict[str, Any]] = []
-        for msg in messages:
-            if (
-                msg.get("role") == "user"
-                and merged
-                and merged[-1].get("role") == "user"
-            ):
-                prev = str(merged[-1].get("content") or "")
-                cur = str(msg.get("content") or "")
-                merged[-1]["content"] = f"{prev}\n\n{cur}".strip()
-            else:
-                merged.append(msg)
-        return merged
-
-    @staticmethod
-    def _sanitize_messages_for_api(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """LM Studio/Qwen reject prompts when user turns are missing or malformed."""
-        cleaned: list[dict[str, Any]] = []
-        for msg in messages:
-            api_msg = Agent._to_api_message(msg)
-            if api_msg is None:
-                continue
-            if api_msg.get("role") == "user" and not str(api_msg.get("content") or "").strip():
-                continue
-            cleaned.append(api_msg)
-        cleaned = Agent._merge_consecutive_users(cleaned)
-        if not any(m.get("role") == "user" for m in cleaned):
-            raise ValueError(
-                "No user message in prompt — context may be corrupt. "
-                "Restart Phaust or clear Memory/phaust.db messages."
-            )
-        return cleaned
 
     def _api_messages(self, prefix: list[dict[str, str]]) -> list[dict[str, Any]]:
-        return self._sanitize_messages_for_api(
-            list(prefix) + list(self.context_memory.messages) # type: ignore
+        return sanitize_messages_for_api(
+            list(prefix) + list(self.context_memory.messages)  # type: ignore
         )
-
-    @staticmethod
-    def _raise_for_llm_error(response: requests.Response) -> None:
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            detail = response.text.strip()
-            if detail:
-                raise requests.HTTPError(
-                    f"{exc} — {detail[:800]}",
-                    response=response,
-                ) from exc
-            raise
 
     def _normalize_rel_path(self, path: str) -> str:
         if not path.strip() or self.workspace is None:
@@ -566,7 +334,7 @@ class Agent:
                 "messages": self._api_messages(prefix),
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
-                "extra_body": self._llm_extra(),
+                "extra_body": llm_extra(),
             }
 
             schemas = self.tools.get_schemas()
@@ -583,7 +351,7 @@ class Agent:
                 timeout=300,
             )
             try:
-                self._raise_for_llm_error(r)
+                raise_for_llm_error(r)
             except requests.HTTPError as exc:
                 if "No user query found" in str(exc):
                     self.context_memory.db.repair_message_history() # type: ignore
@@ -657,7 +425,7 @@ class Agent:
                     )
                     self._persist()
                     continue
-                reply = self._message_text(msg) or (
+                reply = message_text(msg) or (
                     "(no response from model — check LM Studio has a chat model loaded)"
                 )
                 if should_nudge_shell_staging(
@@ -700,7 +468,7 @@ class Agent:
                     self._persist()
                     continue
                 if (
-                    self._is_meta_narration(reply)
+                    is_meta_narration(reply)
                     and nudge_budget.meta < 1
                     and not memory_recall_this_turn
                 ):
@@ -766,7 +534,7 @@ class Agent:
                     memory_stored = True
                 if name == "remember" and result.get("saved"):
                     memory_stored = True
-                _print_tool_result(name, result)
+                print_tool_result(name, result)
                 self.context_memory.append_message( # type: ignore
                     {
                         "role": "tool",
@@ -866,11 +634,30 @@ class Agent:
                 self._persist()
                 return reply
 
-            sources = self._grounding_from_tool_results(round_results)
+            if should_nudge_tool_recovery(round_results, nudge_budget):
+                nudge_budget.tool_recovery += 1
+                recovery = build_tool_recovery_nudge(round_results)
+                print("  → tool error — recovery nudge…")
+                self.context_memory.append_message(  # type: ignore
+                    {"role": "user", "content": recovery or ""}
+                )
+                self._persist()
+                continue
+
+            sources = grounding_from_tool_results(round_results)
             if sources and not should_skip_synthesis(intent, tool_calls):
                 print("  → synthesizing answer from file contents…")
-                answer = self._synthesize_from_sources(
-                    self._last_user_message(), sources
+                synth_model, synth_url, synth_key, synth_temp, synth_max = (
+                    self._synthesis_llm()
+                )
+                answer = synthesize_from_sources(
+                    question=self._last_user_message(),
+                    sources=sources,
+                    model=synth_model,
+                    base_url=synth_url,
+                    api_key=synth_key,
+                    temperature=synth_temp,
+                    max_tokens=synth_max,
                 )
                 self.context_memory.append_message( # type: ignore
                     {"role": "assistant", "content": answer}
@@ -958,75 +745,6 @@ class Agent:
                 if k not in ("args", "cwd_abs", "matched_allow")
             }
         return result
-
-
-def _print_tool_result(name: str | None, result: dict[str, Any]) -> None:
-    if result.get("skipped"):
-        print(f"     ○ {name}: {result.get('reason', 'skipped')}")
-        return
-    if result.get("error"):
-        print(f"     ✗ {result['error']}")
-        if result.get("hint"):
-            for line in str(result["hint"]).splitlines()[:4]:
-                print(f"       {line}")
-        return
-    if name == "read_file":
-        lines = result.get("total_lines", "?")
-        path = result.get("path", "?")
-        print(f"     ✓ read {path} ({lines} lines)")
-    elif name == "grep":
-        n = len(result.get("matches") or [])
-        print(f"     ✓ {n} match(es)")
-    elif name in ("list_files", "list_directory"):
-        print(f"     ✓ {result.get('count', 0)} path(s)")
-    elif name == "run_command":
-        if result.get("executed"):
-            code = result.get("exit_code", "?")
-            print(f"     ✓ exit {code}")
-            print_command_result(result)
-        elif result.get("cancelled"):
-            print("     ○ cancelled (not run)")
-        elif result.get("error"):
-            print(f"     ✗ {result['error']}")
-    elif name == "memorize":
-        if result.get("stored"):
-            print(f"     ✓ memorized id={result.get('id', '?')}")
-        elif result.get("skipped"):
-            print(f"     ○ {name}: {result.get('reason', 'skipped')}")
-        elif result.get("error"):
-            print(f"     ✗ {result['error']}")
-    elif name == "remember":
-        if result.get("saved"):
-            print(f"     ✓ remembered {result.get('key')}")
-        elif result.get("skipped"):
-            print(f"     ○ {name}: {result.get('reason', 'skipped')}")
-        elif result.get("error"):
-            print(f"     ✗ {result['error']}")
-    elif name in ("recall_episode", "recall"):
-        if result.get("error"):
-            print(f"     ✗ {result['error']}")
-            if result.get("hint"):
-                print(f"       {result['hint']}")
-        elif result.get("text"):
-            eid = result.get("id", "?")
-            chars = len(str(result.get("text") or ""))
-            print(f"     ✓ episode {eid} ({chars} chars)")
-        elif result.get("value") is not None:
-            print(f"     ✓ {result.get('key')} = {result.get('value')}")
-        elif result.get("key"):
-            print(f"     ○ no fact for {result.get('key')}")
-    elif name == "search_semantic":
-        hits = result.get("results") or []
-        print(f"     ✓ {len(hits)} hit(s)")
-    elif name in WRITE_TOOL_NAMES:
-        if result.get("applied") and result.get("deleted"):
-            print(f"     ✓ deleted {result.get('path')}")
-        elif result.get("applied"):
-            print(f"     ✓ written {result.get('path')} ({result.get('bytes', '?')} bytes)")
-        elif result.get("cancelled"):
-            print("     ○ cancelled (disk unchanged)")
-        elif result.get("error"):
-            print(f"     ✗ {result['error']}")
 
 
 def run(agent: Agent) -> None:

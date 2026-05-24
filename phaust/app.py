@@ -47,6 +47,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
         max_write_proposals=config.max_write_proposals,
         require_write_approval=config.require_write_approval,
         shell_config=config.shell,  # type: ignore
+        synthesis=config.synthesis,
     )
     agent.config_path = config_path
     agent.config_name = config.name

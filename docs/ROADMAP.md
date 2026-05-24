@@ -18,7 +18,9 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | `phaust/orchestration/` | **Done** |
 | `phaust/tasks/` | **Done** |
 | `phaust/memory/retrieval.py` | **Done** |
-| `agent.py` slim-down | **In progress** — synthesis still in agent |
+| `agent.py` slim-down | **In progress** — synthesis in `turn_runner.py`; loop still in agent |
+| Tool recovery nudge | **Done** — one retry hint per turn on recoverable errors |
+| Synthesis model profile | **Done** — optional `[llm.synthesis]` in `phaust.toml` |
 
 ### Features
 
@@ -29,7 +31,8 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | **Shell** | Done |
 | **Tasks** | Done — multi-step mode, checkpoints, REPL commands |
 | **Memory** | Done — hybrid retrieval, full search_semantic output |
-| **Models** | Planned — per-task model profiles |
+| **Models** | Partial — `[llm.synthesis]` profile; per-task profiles still planned |
 | **Packaging** | **Done** — `pip install -e .` and `phaust` CLI |
+| **Recap** | **Done** — `phaust recap` (tasks, facts, episodes, live context) |
 
 Contributions welcome on branch `experimental`.

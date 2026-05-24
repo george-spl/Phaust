@@ -1,6 +1,6 @@
 # Phaust-2
 
-**P**ractical **H**elper **A**utomated **U**tility **S**ystem — Iteration 2 (repo: Phaust-1)
+**P**ractical **H**elper **A**utomated **U**tility **S**ystem — Iteration 2
 
 Successor to **Phaust-1** (`phaust-1-regression-complete`). Same local agent; upgraded architecture — see [docs/ITERATIONS.md](docs/ITERATIONS.md).
 
@@ -17,7 +17,7 @@ A local, private AI agent that runs in your terminal. It uses a local LLM (via [
 ### Option A — install the CLI (recommended)
 
 ```powershell
-cd D:\github\Phaust-1
+cd D:\github\Phaust-2
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e .
@@ -26,10 +26,12 @@ pip install -e .
 Start your LLM server, then from your project directory (where `phaust.toml` lives):
 
 ```powershell
-phaust
+phaust              # interactive chat (default)
+phaust recap        # tasks, facts, episodes — no LLM session
+phaust -C D:\path\to\project
 ```
 
-Use `phaust -C D:\path\to\project` to point at a different workspace. `python main.py` still works for this repo.
+`python main.py` still works for this repo (defaults workspace to repo root).
 
 ### Option B — run from source without installing
 
@@ -46,11 +48,14 @@ Type `exit` or `quit` to end the session and archive memory.
 |-------|------|
 | **Context** | Recent chat (last 50 messages), session variables, live context (time, workspace) |
 | **Long-term** | Explicit facts (`remember` / `recall` / `forget`) — user profile keys like `user_name` |
-| **Semantic** | Searchable episode summaries from past conversations |
+| **Semantic** | Hybrid search over episode summaries (`search_semantic`, filename boost) |
+| **Tasks** | Multi-step work with checkpoints (`task start Title :: step1 :: step2`) |
 
-Older messages are auto-compacted into episodes (and only durable **user** facts) so memory stays small without losing the gist.
+Older messages are auto-compacted into episodes (and durable **user** facts) so memory stays small without losing the gist.
 
-**Explain vs edit:** For “what does this file do?”, Phaust reads the file and answers from source (synthesis pass). For “write / edit / add a line”, it skips synthesis and uses the write path with diff approval.
+**Explain vs edit:** For “what does this file do?”, Phaust reads the file and answers from source (synthesis pass in `turn_runner.py`). For “write / edit / add a line”, it skips synthesis and uses the write path with diff approval.
+
+**Orchestration:** Intent, nudges, and outcomes live in `phaust/orchestration/` — not regex soup in `agent.py`. Recoverable tool errors get one retry nudge per turn (e.g. read-before-write).
 
 ## Tools
 
@@ -66,120 +71,110 @@ Older messages are auto-compacted into episodes (and only durable **user** facts
 - `delete_file` — propose removing a file from disk
 - `run_command` — run an allowlisted shell command (preview + approval)
 
-**Write safety:** Every `edit_file` / `write_file` shows a full diff first. Nothing is written until you answer `y` to `Apply this change to disk? [y/N]`. Declining ends the turn and leaves the file unchanged.
+**Write safety:** Every `edit_file` / `write_file` shows a full diff first. Nothing is written until you answer `y` to `Apply this change to disk? [y/N]`.
 
-**Shell safety:** `run_command` only runs prefixes listed in `phaust.toml` `[shell].allow`. You must answer `y` to `Run this command? [y/N]` before it executes. Commands run with `shell=false` inside the workspace (no `;`, pipes, or redirects).
+**Shell safety:** `run_command` only runs prefixes listed in `phaust.toml` `[shell].allow`. You must answer `y` to `Run this command? [y/N]` before it executes.
 
-Protected paths (no writes): `Memory/`, `.venv/`, `.git/`, `node_modules/`, etc. Allowed extensions include `.py`, `.md`, `.json`, `.txt`, `.yaml`, `.toml`.
+Protected paths (no writes): `Memory/`, `.venv/`, `.git/`, `node_modules/`, etc.
 
 **Memory**
 
 - `remember`, `recall`, `forget`, `list_memories`
-- `memorize`, `search_semantic`, `forget_semantic`
+- `memorize`, `search_semantic`, `recall_episode`, `list_episodes`, `forget_semantic`
 - `set_session`, `get_session`
 
-**Private session:** Say e.g. `remember nothing this session` — Phaust blocks `remember` / `memorize` and discards the transcript on `exit` (no new facts or episodes).
+**Task mode (REPL, not LLM tools)**
+
+- `task help`, `task start Title :: step1 :: step2`, `task next`, `task pause` / `task resume`, `task done`
+- Checkpoints under `Memory/tasks/` (gitignored)
+
+**Private session:** Say e.g. `remember nothing this session` — blocks `remember` / `memorize` and discards transcript on `exit`.
 
 ## Project layout
 
 ```
-main.py              Entry point, tool registration
-phaust.toml          Runtime settings (model, memory limits, workspace)
+main.py              Legacy entry (repo root as workspace)
+pyproject.toml       pip install -e . → `phaust` CLI
+phaust.toml          Runtime settings
+AGENTS.md            Project rules (loaded every session)
 phaust/
-  config.py          Load phaust.toml
-  prompts.py         Load AGENTS.md into system prompt
-  agent.py           Chat loop, tool orchestration, synthesis, write flow
-  tool_parse.py      Qwen/LM Studio XML tool-call fallback
-  tools.py           Tool schema registry
-  workspace.py       Read-only file tools
-  workspace_write.py Edit/write with user approval
-  shell.py           Allowlisted run_command
-  memory/
-    store.py         SQLite (phaust.db)
-    context.py       Working / chat memory, session policy
-    long_term.py     Key-value facts
-    semantic.py      Episode search (embeddings + fallback)
-    compaction.py    Summarize old chat into memory
+  cli.py             `phaust`, `phaust recap`
+  app.py             build_agent(workspace)
+  agent.py           Chat loop, approvals, memory lifecycle
+  turn_runner.py     Synthesis pass, API message sanitization
+  reply.py           User-facing reply cleanup
+  recap.py           `phaust recap` snapshot
+  orchestration/     Intent, policy, nudges, outcomes
+  tasks/             Multi-step task mode
+  memory/            SQLite, compaction, hybrid retrieval
 docs/
-  ROADMAP.md         Phaust-2 plans
+  ARCHITECTURE.md    Layer diagram and design rules
+  ROADMAP.md         Phaust-2 status and plans
+  ITERATIONS.md      v1 vs v2 history
 Memory/
-  phaust.db          Created at runtime (gitignored)
+  phaust.db          Runtime (gitignored)
 ```
 
 ## Configuration
 
-Edit **`phaust.toml`** in the project root (loaded on startup). Override path with env `PHAUST_CONFIG`.
+Edit **`phaust.toml`** in the project root. Override path with env `PHAUST_CONFIG`.
 
 | Section | Keys |
 |---------|------|
 | `[phaust]` | `name`, `iteration` |
 | `[llm]` | `model`, `base_url`, `api_key`, `temperature`, `max_tokens` |
-| `[workspace]` | `root` (relative to `phaust.toml`) |
-| `[memory]` | `max_messages`, `compact_batch`, `max_episodes`, `semantic_top_k` |
+| `[llm.synthesis]` | Optional — explain-mode second pass (defaults to `[llm]`) |
+| `[workspace]` | `root` |
+| `[memory]` | `max_messages`, `compact_batch`, `max_episodes`, `semantic_top_k`, hybrid retrieval |
 | `[agent]` | `agents_md`, `max_tool_rounds`, `max_write_proposals`, `require_write_approval` |
-| `[shell]` | `enabled`, `require_approval`, `timeout_seconds`, `max_output_bytes`, `allow` |
+| `[tasks]` | `enabled`, `storage_dir`, `auto_checkpoint` |
+| `[shell]` | `enabled`, `require_approval`, `allow`, … |
 
-**Project rules:** Edit [`AGENTS.md`](AGENTS.md) to change tone, tool behavior, and write policy (loaded every session). Set `agents_md = ""` in `phaust.toml` to disable and use a minimal built-in fallback.
+**Project rules:** [`AGENTS.md`](AGENTS.md) — identity, tool policy, shipped vs planned capabilities.
 
 ## LM Studio tips
 
-- Disable **Enable Thinking** for Qwen 3.x if replies are empty or show long “thinking” traces.
-- Keep a **chat model loaded** for the whole session — unloading causes `(no response from model)`.
-- Do not press **Enter** on an empty `You:` prompt — blank user turns break Qwen’s template (`400: No user query found`).
+- Disable **Enable Thinking** for Qwen 3.x if replies are empty or show long traces.
+- Keep a **chat model loaded** for the whole session.
+- Do not press **Enter** on an empty `You:` prompt (`400: No user query found`).
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---------|-------------|
-| `400` / “No user query found” | Corrupt context in SQLite (often a crashed turn). Restart Phaust — it auto-repairs. Or: `sqlite3 Memory\phaust.db "DELETE FROM messages;"` |
-| Plan to edit but no diff | Model replied with text only — one nudge, then XML tool blocks are parsed if needed. |
-| Raw `<tool_call>` in the reply | Qwen text-format tools — parsed when possible; stripped from final text. |
-| `n` loops forever | Fixed: one decline stops the turn; max 2 write previews per message. |
-| Wrong line numbers (`7\|`, `2\|`) on write | Was caused by numbered read output — fixed: `read_file` returns exact disk text. |
-| Answer stops after `read_file` on edits | Read-only synthesis — skipped when you asked for a file change. |
+| `400` / “No user query found” | Corrupt context — restart Phaust (auto-repair) or clear `messages` in `Memory/phaust.db` |
+| Edit without `read_file` on existing file | Tool error + recovery nudge — call `read_file` then retry |
+| Answer stops after `read_file` on edits | Synthesis skipped for write intent — expected |
+| `pip install` points at wrong venv | Delete `.venv`, recreate, `pip install -e .` again |
 
 ## Inspecting memory
+
+```powershell
+phaust recap
+```
+
+Or SQLite:
 
 ```powershell
 sqlite3 Memory\phaust.db
 ```
 
 ```sql
-.tables
 SELECT key, value FROM facts;
 SELECT substr(text, 1, 100), created_at FROM episodes ORDER BY created_at DESC LIMIT 5;
-.quit
 ```
 
-Healthy facts: mostly `user_*` keys (name, job, company, hobbies). Task details belong in **episodes**, not facts.
+## Testing
 
-## Stress testing
+```powershell
+python -c "import tests.test_orchestration, tests.test_turn_runner, tests.test_recap, tests.test_tasks"
+```
 
-Comprehensive manual tests live in [`docs/STRESS_TESTS.md`](docs/STRESS_TESTS.md) (~55 checks across blocks A–L: session etiquette, reads, writes, shell, memory, security, compaction, regressions).
-
-**How to run:** Start `python main.py`, send one prompt per line from the doc, approve writes/shell with `y`/`N` as intended. Log George’s PASS/PARTIAL/FAIL in `test_logging.txt`; ask Phaust to append self-assessment via `read_file` + `edit_file`.
-
-| Artifact | Purpose |
-|----------|---------|
-| `test_logging.txt` | Active log (round 2 in progress or latest run) |
-| `test_logging_1_24-05-26.txt` | Archived results from stress **round 1** (pre-fixes) |
-
-### Results summary (George’s scores)
-
-| Run | PASS | PARTIAL | FAIL | Notes |
-|-----|------|---------|------|-------|
-| **Round 1** | ~44/48 logged | several | K7 (recall_episode meta-nudge) | Before agent hardening; many logging self-assessments wrong |
-| **Round 2** | **46** | **9** | **1** (I1 git staging) | After fixes: K7 OK, A 5/5, K 8/8; logging labels still scrambled without George correcting log |
-
-**Round 2 confirmed fixes:** `recall_episode` direct reply (K7), allowlist stop-after-block (D3), memory policy toggles (G), native tool discipline (H/K).
-
-**Round 2 remaining gaps:** logging self-assessment maps wrong test IDs; I1 must call `run_command git add`; E2 should call `recall()`; F4 cross-session needs `search_semantic`; false write nudge on policy blocks (addressed in latest agent.py).
-
-See the **Phaust overall opinion** sections at the bottom of `test_logging.txt` for Phaust’s self-review after each run.
+Unit tests are lightweight `python -c` style (no pytest required). Stress/regression notes: [`docs/STRESS_TESTS.md`](docs/STRESS_TESTS.md), log: `test_logging.txt`.
 
 ## What's next
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for **Phaust-2** (allowlisted shell, `AGENTS.md`, task mode, config file).
+See [docs/ROADMAP.md](docs/ROADMAP.md) — memory CLI, NL → task decomposition, per-task model profiles, further `agent.py` slim-down.
 
 ## License
 

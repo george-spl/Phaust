@@ -26,12 +26,24 @@ class TaskConfig:
 
 
 @dataclass(frozen=True)
+class SynthesisConfig:
+    """Optional second model for explain-mode synthesis (defaults to main [llm])."""
+
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    temperature: float = 0.2
+    max_tokens: int = 1024
+
+
+@dataclass(frozen=True)
 class PhaustConfig:
     model: str = "qwen/qwen3.5-9b"
     base_url: str = "http://127.0.0.1:1234/v1"
     api_key: str = "NO_API_KEY"
     temperature: float = 0.3
     max_tokens: int = 8192
+    synthesis: SynthesisConfig = field(default_factory=SynthesisConfig)
     workspace_root: Path | None = None
     max_messages: int = 50
     compact_batch: int = 10
@@ -65,6 +77,7 @@ def _resolve_path(value: str, base: Path) -> Path:
 def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> PhaustConfig:
     """Build a new config from defaults + TOML tables."""
     llm = raw.get("llm") or {}
+    synth_raw = llm.get("synthesis") if isinstance(llm.get("synthesis"), dict) else {}
     workspace = raw.get("workspace") or {}
     memory = raw.get("memory") or {}
     agent = raw.get("agent") or {}
@@ -91,12 +104,32 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
         allow=_parse_shell_allow(shell.get("allow"), base_shell.allow),
     )
 
+    base_synth = config.synthesis
+    synth_model = synth_raw.get("model")
+    synth_cfg = SynthesisConfig(
+        model=str(synth_model) if synth_model else base_synth.model,
+        base_url=(
+            str(synth_raw["base_url"]).rstrip("/")
+            if isinstance(synth_raw.get("base_url"), str)
+            and synth_raw["base_url"].strip()
+            else base_synth.base_url
+        ),
+        api_key=(
+            str(synth_raw["api_key"])
+            if isinstance(synth_raw.get("api_key"), str) and synth_raw["api_key"].strip()
+            else base_synth.api_key
+        ),
+        temperature=float(synth_raw.get("temperature", base_synth.temperature)),
+        max_tokens=int(synth_raw.get("max_tokens", base_synth.max_tokens)),
+    )
+
     return PhaustConfig(
         model=str(llm.get("model", config.model)),
         base_url=str(llm.get("base_url", config.base_url)).rstrip("/"),
         api_key=str(llm.get("api_key", config.api_key)),
         temperature=float(llm.get("temperature", config.temperature)),
         max_tokens=int(llm.get("max_tokens", config.max_tokens)),
+        synthesis=synth_cfg,
         workspace_root=ws_root,
         max_messages=int(memory.get("max_messages", config.max_messages)),
         compact_batch=int(memory.get("compact_batch", config.compact_batch)),
