@@ -71,8 +71,17 @@ _EPISODE_UUID_RE = re.compile(
     re.IGNORECASE,
 )
 _SHELL_INTENT_RE = re.compile(
-    r"\b(?:run_command|run\s+(?:git|python|curl)|git\s+\w+|stage\s+(?:all|changes)|"
-    r"curl\s+http)\b",
+    r"\b(?:run_command|run\s+(?:git|python|curl)|git\s+\w+|stage\s+(?:all\s+)?changes?"
+    r"|curl\s+http)\b",
+    re.I,
+)
+_GIT_STAGING_RE = re.compile(
+    r"\b(?:stage\s+(?:all\s+)?changes?(?:\s+with\s+git)?|git\s+add\b)\b",
+    re.I,
+)
+_FACT_RECALL_RE = re.compile(r"^\s*recall\s+([a-z_][\w]*)\s*$", re.I)
+_CROSS_SESSION_RE = re.compile(
+    r"\b(?:what did we do|in testing|last session|prior session|stress_c1|earlier today)\b",
     re.I,
 )
 _LOGGING_TASK_RE = re.compile(
@@ -294,7 +303,15 @@ class Agent:
                 "</brevity>"
             )
 
-        if _SHELL_INTENT_RE.search(user_message):
+        if _GIT_STAGING_RE.search(user_message):
+            blocks.append(
+                "<git_staging_request>\n"
+                "User wants to stage git changes. Call run_command with `git add .` "
+                "(native function call). If blocked, report the allowlist error and stop — "
+                "do not read phaust.toml, do not suggest running git in an external terminal.\n"
+                "</git_staging_request>"
+            )
+        elif _SHELL_INTENT_RE.search(user_message):
             blocks.append(
                 "<shell_rules>\n"
                 "Use run_command only for allowlisted prefixes (see phaust.toml). "
@@ -306,10 +323,13 @@ class Agent:
         if _LOGGING_TASK_RE.search(user_message):
             blocks.append(
                 "<logging_task>\n"
-                "When appending stress-test results to a log file, the self-assessment "
-                "must describe the test IDs from the session (A1, K7, etc.) — not the "
-                "read_file/edit_file logging operation. Write concrete prose; no "
-                "[placeholders] or TBD.\n"
+                "Append stress-test results to the log file using read_file then edit_file.\n"
+                "The user's earlier messages in THIS session are the tests (G1=memory disable, "
+                "I2=.git/config block, etc.) — do not refuse or claim 'no tests ran'.\n"
+                "Self-assessment must use the test IDs from the prompt (A1, K7, …) and describe "
+                "what happened in each test — NOT the read_file/edit_file logging operation.\n"
+                "Example line: G1: PASS — memory writes disabled; memorize blocked.\n"
+                "Write concrete prose; no [placeholders], TBD, or shuffled labels.\n"
                 "</logging_task>"
             )
 
@@ -586,8 +606,87 @@ class Agent:
             raise
 
     @staticmethod
+    def _user_requests_git_staging(message: str) -> bool:
+        return bool(_GIT_STAGING_RE.search(message))
+
+    @staticmethod
+    def _user_requests_fact_recall(message: str) -> bool:
+        match = _FACT_RECALL_RE.match(message.strip())
+        if not match:
+            return False
+        key = match.group(1)
+        if _EPISODE_UUID_RE.fullmatch(key):
+            return False
+        return True
+
+    @staticmethod
+    def _fact_recall_key(message: str) -> str | None:
+        match = _FACT_RECALL_RE.match(message.strip())
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _is_write_policy_error(result: dict[str, Any]) -> bool:
+        err = str(result.get("error") or "")
+        return (
+            "Writes blocked under protected path" in err
+            or "Extension not allowed for writes" in err
+        )
+
+    @staticmethod
+    def _format_write_policy_outcome(results: list[dict[str, Any]]) -> str:
+        for result in results:
+            if result.get("error"):
+                hint = result.get("hint")
+                msg = str(result["error"])
+                if hint:
+                    msg += f" {hint}"
+                return msg
+        return "Write blocked by workspace policy."
+
+    @staticmethod
+    def _is_logging_refusal(text: str) -> bool:
+        lower = text.lower()
+        return any(
+            phrase in lower
+            for phrase in (
+                "cannot append",
+                "can't append",
+                "no tests were executed",
+                "no tests ran",
+                "would be inaccurate",
+                "invent g1",
+            )
+        )
+
+    _LOGGING_NUDGE = (
+        "Append to the log file now with read_file then edit_file. "
+        "Self-assessment lines must describe stress-test IDs from THIS session "
+        "(e.g. G1: memory disable, I2: .git/config block) — NOT the logging edit. "
+        "Use one sentence per test ID. Do not refuse."
+    )
+
+    _SHELL_STAGING_NUDGE = (
+        "Call run_command with `git add .` now (native function call). "
+        "If blocked, report the allowlist error — do not read phaust.toml or "
+        "suggest manual terminal commands."
+    )
+
+    @staticmethod
+    def _recall_nudge_message(user_message: str) -> str:
+        key = Agent._fact_recall_key(user_message)
+        if key:
+            return (
+                f"Call recall(key={key!r}) now (native function call). "
+                "Do not answer from injected memory text alone."
+            )
+        return (
+            "Call search_semantic or recall_episode before answering about "
+            "past sessions or prior tests (native function call)."
+        )
+
+    @staticmethod
     def _user_requests_file_change(message: str) -> bool:
-        if _SHELL_INTENT_RE.search(message):
+        if _SHELL_INTENT_RE.search(message) or _GIT_STAGING_RE.search(message):
             return False
         return bool(_WRITE_INTENT_RE.search(message))
 
@@ -907,7 +1006,11 @@ class Agent:
             self._user_asks_about_past(user_message)
             or bool(_EPISODE_UUID_RE.search(user_message))
             or bool(re.search(r"\brecall\b", user_message, re.I))
+            or bool(_CROSS_SESSION_RE.search(user_message))
         )
+        wants_logging = bool(_LOGGING_TASK_RE.search(user_message))
+        wants_git_staging = self._user_requests_git_staging(user_message)
+        wants_fact_recall = self._user_requests_fact_recall(user_message)
         if wants_memorize and not self.context_memory.memory_writes_enabled(): # type: ignore
             reply = (
                 "Memory writes are disabled this session. "
@@ -928,8 +1031,12 @@ class Agent:
         write_nudges = 0
         memorize_nudges = 0
         meta_nudges = 0
+        logging_nudges = 0
+        recall_nudges = 0
+        shell_staging_nudges = 0
         memory_recall_this_turn = False
         shell_allowlist_blocked = False
+        write_policy_blocked = False
         read_paths: list[str] = []
         empty_write_paths: set[str] = set()
         file_snapshots: dict[str, str] = {}
@@ -1014,6 +1121,7 @@ class Agent:
                     wants_edit
                     and not write_applied
                     and not write_declined
+                    and not write_policy_blocked
                     and write_proposals < self.max_write_proposals
                     and write_nudges < 1
                 ):
@@ -1037,6 +1145,50 @@ class Agent:
                 reply = self._message_text(msg) or (
                     "(no response from model — check LM Studio has a chat model loaded)"
                 )
+                if (
+                    wants_git_staging
+                    and not command_applied
+                    and not shell_allowlist_blocked
+                    and shell_staging_nudges < 1
+                ):
+                    shell_staging_nudges += 1
+                    print("  → shell pending — nudging model…")
+                    self.context_memory.append_message( # type: ignore
+                        {
+                            "role": "user",
+                            "content": self._SHELL_STAGING_NUDGE,
+                        }
+                    )
+                    self._persist()
+                    continue
+                if (
+                    wants_logging
+                    and logging_nudges < 1
+                    and self._is_logging_refusal(reply)
+                ):
+                    logging_nudges += 1
+                    print("  → logging append — nudging model…")
+                    self.context_memory.append_message( # type: ignore
+                        {"role": "user", "content": self._LOGGING_NUDGE}
+                    )
+                    self._persist()
+                    continue
+                if (
+                    (wants_fact_recall or wants_recall)
+                    and not memory_recall_this_turn
+                    and recall_nudges < 1
+                    and not wants_logging
+                ):
+                    recall_nudges += 1
+                    print("  → recall pending — nudging model…")
+                    self.context_memory.append_message( # type: ignore
+                        {
+                            "role": "user",
+                            "content": self._recall_nudge_message(user_message),
+                        }
+                    )
+                    self._persist()
+                    continue
                 if self._is_meta_narration(reply) and meta_nudges < 1 and not memory_recall_this_turn:
                     meta_nudges += 1
                     print("  → meta narration — nudging model…")
@@ -1086,6 +1238,8 @@ class Agent:
                         self._files_read_this_turn.add(rel)
                 if name in WRITE_TOOL_NAMES:
                     last_write_path = str(result.get("path") or last_write_path or "")
+                    if self._is_write_policy_error(result):
+                        write_policy_blocked = True
                     if result.get("error") is None and not result.get("skipped"):
                         write_proposals += 1
                     if result.get("applied"):
@@ -1124,6 +1278,14 @@ class Agent:
                 and not command_declined
             ):
                 reply = self._format_command_outcome(round_results)
+                self.context_memory.append_message( # type: ignore
+                    {"role": "assistant", "content": reply}
+                )
+                self._persist()
+                return reply
+
+            if write_policy_blocked and not write_applied and not write_declined:
+                reply = self._format_write_policy_outcome(round_results)
                 self.context_memory.append_message( # type: ignore
                     {"role": "assistant", "content": reply}
                 )

@@ -1,5 +1,4 @@
-"""Phaust-1 — local agent entry point."""  # Phaust stress test H1
-# Phaust H5 write test
+"""Phaust-1 — local agent entry point."""
 
 from __future__ import annotations
 

@@ -111,6 +111,7 @@ Available: `read_file`, `list_directory`, `list_files`, `grep`, `create_file`, `
 - Commands **preview first** — user must answer `y/N` before execution.
 - Do not suggest arbitrary shell in chat; use `run_command` only with allowed prefixes.
 - If a command is **not on the allowlist**, explain why and stop — do not run a different shell command unless the user asks.
+- To **stage git changes**, call `run_command` with `git add .` — do not read `phaust.toml` or tell the user to run git manually.
 
 ## Memory
 

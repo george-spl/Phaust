@@ -140,6 +140,30 @@ SELECT substr(text, 1, 100), created_at FROM episodes ORDER BY created_at DESC L
 
 Healthy facts: mostly `user_*` keys (name, job, company, hobbies). Task details belong in **episodes**, not facts.
 
+## Stress testing
+
+Comprehensive manual tests live in [`docs/STRESS_TESTS.md`](docs/STRESS_TESTS.md) (~55 checks across blocks A–L: session etiquette, reads, writes, shell, memory, security, compaction, regressions).
+
+**How to run:** Start `python main.py`, send one prompt per line from the doc, approve writes/shell with `y`/`N` as intended. Log George’s PASS/PARTIAL/FAIL in `test_logging.txt`; ask Phaust to append self-assessment via `read_file` + `edit_file`.
+
+| Artifact | Purpose |
+|----------|---------|
+| `test_logging.txt` | Active log (round 2 in progress or latest run) |
+| `test_logging_1_24-05-26.txt` | Archived results from stress **round 1** (pre-fixes) |
+
+### Results summary (George’s scores)
+
+| Run | PASS | PARTIAL | FAIL | Notes |
+|-----|------|---------|------|-------|
+| **Round 1** | ~44/48 logged | several | K7 (recall_episode meta-nudge) | Before agent hardening; many logging self-assessments wrong |
+| **Round 2** | **46** | **9** | **1** (I1 git staging) | After fixes: K7 OK, A 5/5, K 8/8; logging labels still scrambled without George correcting log |
+
+**Round 2 confirmed fixes:** `recall_episode` direct reply (K7), allowlist stop-after-block (D3), memory policy toggles (G), native tool discipline (H/K).
+
+**Round 2 remaining gaps:** logging self-assessment maps wrong test IDs; I1 must call `run_command git add`; E2 should call `recall()`; F4 cross-session needs `search_semantic`; false write nudge on policy blocks (addressed in latest agent.py).
+
+See the **Phaust overall opinion** sections at the bottom of `test_logging.txt` for Phaust’s self-review after each run.
+
 ## What's next
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for **Phaust-2** (allowlisted shell, `AGENTS.md`, task mode, config file).
