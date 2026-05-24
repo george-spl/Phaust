@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -11,8 +12,14 @@ from phaust.config import load_config
 from phaust.prompts import build_system_prompt, load_agents_instructions
 from phaust.workspace import Workspace, register_readonly_tools
 from phaust.workspace_write import register_write_tools
+from phaust.shell import register_shell_tools
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
+
+_EPISODE_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 
 def build_agent(workspace_root: Path | None = None) -> Agent:
@@ -39,6 +46,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
         max_tool_rounds=config.max_tool_rounds,
         max_write_proposals=config.max_write_proposals,
         require_write_approval=config.require_write_approval,
+        shell_config=config.shell,
     )
     agent.config_path = config_path
     agent.config_name = config.name
@@ -54,6 +62,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     register_readonly_tools(agent, workspace)
     register_write_tools(agent, workspace)
+    register_shell_tools(agent, workspace, config.shell)
 
     assert agent.long_term and agent.semantic and agent.context_memory
     lt = agent.long_term
@@ -71,7 +80,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.tool
     def remember(key: str, value: str) -> dict:
-        """Store an explicit fact in long-term memory."""
+        """Store one key-value fact in long-term memory (e.g. key=user_name, value=George). Not for episodes or long text — use memorize."""
         blocked = _memory_writes_blocked()
         if blocked:
             return blocked
@@ -79,7 +88,21 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.tool
     def recall(key: str) -> dict:
-        """Retrieve a fact from long-term memory by key."""
+        """Retrieve a fact from long-term memory by key (snake_case). Not for episode UUIDs — use recall_episode."""
+        key = key.strip()
+        if _EPISODE_ID_RE.match(key):
+            episode = sem.recall_episode(key)
+            if not episode.get("error"):
+                return {
+                    "key": key,
+                    "value": None,
+                    "hint": "That is an episode id, not a fact key.",
+                    "episode": episode,
+                }
+            return {
+                **lt.recall(key),
+                "hint": "Looks like an episode UUID. Use recall_episode or search_semantic.",
+            }
         return lt.recall(key)
 
     @agent.tool
@@ -97,7 +120,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
         text: str,
         tags: Annotated[str | None, "Comma-separated tags, optional"] = None,
     ) -> dict:
-        """Store text in semantic memory for later similarity recall."""
+        """Store a note or conversation snippet in episodic semantic memory. Use text=..., not remember()."""
         blocked = _memory_writes_blocked()
         if blocked:
             return blocked
@@ -106,8 +129,18 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.tool
     def search_semantic(query: str, top_k: int = 5) -> dict:
-        """Search semantic memory by meaning/similarity."""
+        """Search episodic memory by meaning/similarity (not exact UUID lookup)."""
         return {"results": sem.search(query, top_k=top_k)}
+
+    @agent.tool
+    def recall_episode(entry_id: str) -> dict:
+        """Retrieve one archived conversation episode by its UUID."""
+        return sem.recall_episode(entry_id)
+
+    @agent.tool
+    def list_episodes(limit: int = 20) -> dict:
+        """List recent episode ids with short previews."""
+        return {"episodes": sem.list_episode_summaries(limit=limit)}
 
     @agent.tool
     def forget_semantic(entry_id: str) -> dict:

@@ -44,13 +44,18 @@ Older messages are auto-compacted into episodes (and only durable **user** facts
 **Workspace**
 
 - `read_file` — read a file under the project root (content is exact file text for use in `edit_file`)
-- `list_files` — glob file listing
+- `list_directory` — list files and folders in a path (`recursive=true` for nested)
+- `list_files` — glob file listing (optional `path` to scope a folder)
 - `grep` — regex search in files
+- `create_file` — propose creating a new file (no read first)
 - `edit_file` — propose a single search/replace (unique `old_string`)
 - `write_file` — propose create, overwrite, or clear (empty content)
 - `delete_file` — propose removing a file from disk
+- `run_command` — run an allowlisted shell command (preview + approval)
 
 **Write safety:** Every `edit_file` / `write_file` shows a full diff first. Nothing is written until you answer `y` to `Apply this change to disk? [y/N]`. Declining ends the turn and leaves the file unchanged.
+
+**Shell safety:** `run_command` only runs prefixes listed in `phaust.toml` `[shell].allow`. You must answer `y` to `Run this command? [y/N]` before it executes. Commands run with `shell=false` inside the workspace (no `;`, pipes, or redirects).
 
 Protected paths (no writes): `Memory/`, `.venv/`, `.git/`, `node_modules/`, etc. Allowed extensions include `.py`, `.md`, `.json`, `.txt`, `.yaml`, `.toml`.
 
@@ -75,6 +80,7 @@ phaust/
   tools.py           Tool schema registry
   workspace.py       Read-only file tools
   workspace_write.py Edit/write with user approval
+  shell.py           Allowlisted run_command
   memory/
     store.py         SQLite (phaust.db)
     context.py       Working / chat memory, session policy
@@ -98,6 +104,7 @@ Edit **`phaust.toml`** in the project root (loaded on startup). Override path wi
 | `[workspace]` | `root` (relative to `phaust.toml`) |
 | `[memory]` | `max_messages`, `compact_batch`, `max_episodes`, `semantic_top_k` |
 | `[agent]` | `agents_md`, `max_tool_rounds`, `max_write_proposals`, `require_write_approval` |
+| `[shell]` | `enabled`, `require_approval`, `timeout_seconds`, `max_output_bytes`, `allow` |
 
 **Project rules:** Edit [`AGENTS.md`](AGENTS.md) to change tone, tool behavior, and write policy (loaded every session). Set `agents_md = ""` in `phaust.toml` to disable and use a minimal built-in fallback.
 

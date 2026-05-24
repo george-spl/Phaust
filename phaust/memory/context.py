@@ -9,9 +9,27 @@ from typing import Any, Callable, TYPE_CHECKING
 MEMORY_WRITES_DISABLED = "memory_writes_disabled"
 
 _NO_MEMORY_RE = re.compile(
-    r"\bremember\s+nothing\b|\b(?:don'?t|do\s+not)\s+(?:remember|store|save)\b"
+    r"\bremember\s+nothing(?:\s+(?:this|for)\s+session)?\b"
+    r"|\b(?:don'?t|do\s+not)\s+(?:remember|store|save)\s+"
+    r"(?:anything|this|it|stuff|that|what\s+we\s+(?:said|discussed))"
+    r"(?:\s+(?:this|for)\s+session|\s+session)?\b"
+    r"|\b(?:don'?t|do\s+not)\s+(?:remember|store|save)\s+(?:anything\s+)?(?:this\s+)?session\b"
     r"|\bno\s+(?:new\s+)?(?:memory|facts?)\s+(?:this\s+)?session\b"
-    r"|\bwithout\s+(?:saving|storing)\s+memory\b",
+    r"|\bwithout\s+(?:saving|storing)\s+memory\b"
+    r"|\bprivate\s+session\b",
+    re.IGNORECASE,
+)
+
+_ENABLE_MEMORY_RE = re.compile(
+    r"\b(?:remember|save|store)\s+(?:things|stuff|memories|this\s+session|normally|everything)\s+again\b"
+    r"|\b(?:enable|turn\s+on)\s+(?:memory|remembering)(?:\s+writes?)?(?:\s+again)?\b"
+    r"|\bturn\s+(?:on|back)\s+remembering\b"
+    r"|\bsave\s+(?:this\s+)?session(?:\s+(?:to\s+memory|normally))?\b",
+    re.IGNORECASE,
+)
+
+_RHETORICAL_MEMORY_RE = re.compile(
+    r"\b(?:you|phaust)\s+don'?t\s+remember\b|\bdo\s+you\s+remember\b",
     re.IGNORECASE,
 )
 
@@ -59,7 +77,13 @@ class ContextMemory:
 
     @staticmethod
     def user_requests_no_memory(message: str) -> bool:
+        if _RHETORICAL_MEMORY_RE.search(message):
+            return False
         return bool(_NO_MEMORY_RE.search(message))
+
+    @staticmethod
+    def user_requests_memory_again(message: str) -> bool:
+        return bool(_ENABLE_MEMORY_RE.search(message))
 
     def memory_writes_enabled(self) -> bool:
         return not bool(self.get_session(MEMORY_WRITES_DISABLED, False))

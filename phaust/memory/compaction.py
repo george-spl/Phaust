@@ -64,12 +64,16 @@ class Compactor:
         extracted = self._extract(transcript, period)
 
         summary = extracted.get("summary", "").strip()
+        highlights = extracted.get("highlights") or []
+        episode_id: str | None = None
         if summary:
-            semantic.store(
-                f"[{period}] {summary}",
-                source=source,
-                tags=["episode", period[:7]],
-            )
+            body = f"[{period}] {summary}"
+            if highlights:
+                bullets = "\n".join(f"- {h.strip()}" for h in highlights if str(h).strip())
+                if bullets:
+                    body = f"{body}\n\nHighlights:\n{bullets}"
+            stored = semantic.store(body, source=source, tags=["episode", period[:7]])
+            episode_id = stored.get("id")
 
         facts = extracted.get("facts") or []
         saved = 0
@@ -83,6 +87,7 @@ class Compactor:
         return {
             "compacted": len(messages),
             "episode_saved": bool(summary),
+            "episode_id": episode_id,
             "facts_saved": saved,
         }
 
@@ -91,7 +96,11 @@ class Compactor:
             "You compress chat logs into durable memory. "
             "Reply with ONLY valid JSON, no markdown:\n"
             '{"summary": "2-4 sentences with date and main topics/decisions", '
+            '"highlights": ["notable quote or moment", "..."], '
             '"facts": [{"key": "snake_case_key", "value": "short fact"}]}\n'
+            "summary: what happened overall. "
+            "highlights: 0-5 specific moments (messages sent, decisions, tests passed, "
+            "requests to other agents). Use the user's or assistant's words when important. "
             "facts: ONLY durable info about the human user (name, job, employer, age, "
             "stable preferences). Use keys like user_name, user_job_title, user_company. "
             "Do NOT save: file names edited, dates, agent name (Phaust), README text, "

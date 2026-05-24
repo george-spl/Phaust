@@ -81,27 +81,98 @@ class Workspace:
             "content": "\n".join(chunk),
         }
 
-    def list_files(self, glob_pattern: str = "**/*") -> dict[str, Any]:
+    def list_files(
+        self,
+        glob_pattern: str = "**/*",
+        path: str = ".",
+    ) -> dict[str, Any]:
+        """List files matching a glob, optionally scoped to a subdirectory."""
         pattern = (glob_pattern or "**/*").strip()
+        try:
+            base = self.resolve(path)
+        except PermissionError as e:
+            return {"error": str(e)}
+
+        if base.is_file():
+            rel = base.relative_to(self.root).as_posix()
+            return {
+                "workspace": str(self.root),
+                "path": rel,
+                "pattern": pattern,
+                "count": 1,
+                "truncated": False,
+                "paths": [rel],
+            }
+
+        if not base.is_dir():
+            return {"error": f"Not a directory: {path}"}
+
+        search_root = base
         matches: list[str] = []
 
-        for path in sorted(self.root.glob(pattern)):
+        for item in sorted(search_root.glob(pattern)):
             if len(matches) >= MAX_LIST_FILES:
                 break
-            if any(part in SKIP_DIRS for part in path.parts):
+            if any(part in SKIP_DIRS for part in item.parts):
                 continue
-            rel = path.relative_to(self.root).as_posix()
-            if path.is_dir():
+            rel = item.relative_to(self.root).as_posix()
+            if item.is_dir():
                 matches.append(f"{rel}/")
             else:
                 matches.append(rel)
 
         return {
             "workspace": str(self.root),
+            "path": base.relative_to(self.root).as_posix(),
             "pattern": pattern,
             "count": len(matches),
             "truncated": len(matches) >= MAX_LIST_FILES,
             "paths": matches,
+        }
+
+    def list_directory(
+        self,
+        path: str = ".",
+        recursive: bool = False,
+    ) -> dict[str, Any]:
+        """List files and folders under a directory (non-glob)."""
+        try:
+            base = self.resolve(path)
+        except PermissionError as e:
+            return {"error": str(e)}
+
+        if base.is_file():
+            rel = base.relative_to(self.root).as_posix()
+            return {
+                "path": rel,
+                "recursive": False,
+                "count": 1,
+                "truncated": False,
+                "entries": [{"path": rel, "type": "file"}],
+            }
+
+        if not base.is_dir():
+            return {"error": f"Not a directory: {path}"}
+
+        rel_base = base.relative_to(self.root).as_posix()
+        pattern = "**/*" if recursive else "*"
+        entries: list[dict[str, str]] = []
+
+        for item in sorted(base.glob(pattern)):
+            if len(entries) >= MAX_LIST_FILES:
+                break
+            if any(part in SKIP_DIRS for part in item.parts):
+                continue
+            rel = item.relative_to(self.root).as_posix()
+            kind = "dir" if item.is_dir() else "file"
+            entries.append({"path": rel, "type": kind})
+
+        return {
+            "path": rel_base,
+            "recursive": recursive,
+            "count": len(entries),
+            "truncated": len(entries) >= MAX_LIST_FILES,
+            "entries": entries,
         }
 
     def grep(
@@ -179,10 +250,19 @@ def register_readonly_tools(agent: Agent, workspace: Workspace) -> None:
 
     @agent.tool
     def list_files(
-        glob_pattern: Annotated[str, "Glob under workspace, e.g. **/*.py"] = "**/*",
+        glob_pattern: Annotated[str, "Glob under path, e.g. **/*.py"] = "**/*",
+        path: Annotated[str, "Folder or file relative to workspace root"] = ".",
     ) -> dict:
-        """List files matching a glob pattern under the workspace."""
-        return workspace.list_files(glob_pattern)
+        """List files matching a glob pattern, optionally under a subdirectory."""
+        return workspace.list_files(glob_pattern, path=path)
+
+    @agent.tool
+    def list_directory(
+        path: Annotated[str, "Folder relative to workspace, e.g. phaust or phaust/memory"] = ".",
+        recursive: Annotated[bool, "If true, list all nested files and folders"] = False,
+    ) -> dict:
+        """List contents of a directory. Use recursive=true to include subfolders (e.g. read all files in phaust/)."""
+        return workspace.list_directory(path, recursive=recursive)
 
     @agent.tool
     def grep(

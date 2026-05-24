@@ -8,7 +8,7 @@ DEFAULT_AGENTS_MD = "AGENTS.md"
 
 # Minimal fallback if AGENTS.md is missing
 _FALLBACK = """\
-Use read_file before answering about code. Use edit_file, write_file, or delete_file for changes (after read_file).
+Use read_file before answering about code. Use list_directory or list_files to explore folders; use create_file for new files; use edit_file, write_file, or delete_file for existing files (after read_file). Use run_command for allowlisted shell commands (user approves at terminal).
 Writes require user approval at the terminal. Do not greet on every message.\
 """
 

@@ -26,3 +26,20 @@ agents_md = "AGENTS.md"
 max_tool_rounds = 12
 max_write_proposals = 2
 require_write_approval = true
+
+[shell]
+enabled = true
+require_approval = true
+timeout_seconds = 120
+max_output_bytes = 65536
+allow = [
+  "python --version",
+  "python -m pytest",
+  "python -m pip list",
+  "python -m pip show",
+  "python -m py_compile",
+  "git status",
+  "git diff",
+  "git branch",
+  "git log",
+]

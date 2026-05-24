@@ -124,6 +124,38 @@ class SemanticMemory:
             return {"error": f"entry '{entry_id}' not found"}
         return {"deleted": entry_id}
 
+    def recall_episode(self, entry_id: str) -> dict[str, Any]:
+        """Fetch one episodic memory by UUID."""
+        entry = self.db.get_episode(entry_id.strip())
+        if not entry:
+            return {
+                "error": f"episode '{entry_id}' not found",
+                "hint": "Use search_semantic for topic search or list_episodes for ids.",
+            }
+        return {
+            "id": entry["id"],
+            "text": entry["text"],
+            "source": entry.get("source"),
+            "tags": entry.get("tags", []),
+            "created_at": entry.get("created_at"),
+        }
+
+    def list_episode_summaries(self, limit: int = 20) -> list[dict[str, Any]]:
+        entries = self.db.list_episodes()
+        out: list[dict[str, Any]] = []
+        for entry in entries[-limit:]:
+            text = str(entry.get("text") or "")
+            preview = text[:160] + ("…" if len(text) > 160 else "")
+            out.append(
+                {
+                    "id": entry["id"],
+                    "preview": preview,
+                    "created_at": entry.get("created_at"),
+                    "source": entry.get("source"),
+                }
+            )
+        return out
+
     def build_prompt_block(self, query: str, top_k: int = 5) -> str:
         hits = self.search(query, top_k=top_k)
         if not hits:
@@ -134,3 +166,67 @@ class SemanticMemory:
             for h in hits
         ]
         return "<semantic_memory>\n" + "\n".join(lines) + "\n</semantic_memory>"
+
+    def build_recall_block(self, query: str, top_k: int = 8) -> str:
+        """Broader episodic search when the user asks about past conversations."""
+        query = query.strip()
+        if not query:
+            return ""
+
+        extra_terms: list[str] = []
+        lower = query.lower()
+        for term in (
+            "cursor",
+            "message",
+            "design",
+            "episode",
+            "remember",
+            "phaust",
+            "archived",
+        ):
+            if term in lower:
+                extra_terms.append(term)
+
+        seen: set[str] = set()
+        hits: list[dict[str, Any]] = []
+        for q in [query, *extra_terms]:
+            for hit in self.search(q, top_k=top_k):
+                eid = str(hit.get("id", ""))
+                if eid and eid not in seen:
+                    seen.add(eid)
+                    hits.append(hit)
+
+        hits.sort(key=lambda h: float(h.get("score") or 0), reverse=True)
+        hits = hits[:top_k]
+
+        parts: list[str] = []
+        if hits:
+            parts.append("<episodes_matching_query>")
+            for hit in hits:
+                parts.append(
+                    f"### id={hit['id']} (score={hit.get('score')})\n{hit.get('text', '')}"
+                )
+            parts.append("</episodes_matching_query>")
+
+        recent = self.list_episode_summaries(limit=10)
+        if recent:
+            lines = [
+                f"- {e['id']}: {e['preview']}" for e in reversed(recent)
+            ]
+            parts.append(
+                "<recent_episodes>\n"
+                + "\n".join(lines)
+                + "\n</recent_episodes>"
+            )
+
+        if not parts:
+            return ""
+
+        return (
+            "<memory_recall>\n"
+            "The user is asking about past conversations. Use this archive — do not "
+            "claim you have no record until you have checked these episodes. "
+            "For a specific id use recall_episode.\n\n"
+            + "\n\n".join(parts)
+            + "\n</memory_recall>"
+        )

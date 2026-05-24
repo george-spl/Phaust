@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from phaust.shell import ShellConfig, default_shell_config
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,14 @@ class PhaustConfig:
     iteration: int = 1
     name: str = "Phaust-1"
     agents_md: str = "AGENTS.md"
+    shell: ShellConfig = field(default_factory=default_shell_config)
+
+
+def _parse_shell_allow(raw: Any, default: tuple[str, ...]) -> tuple[str, ...]:
+    if not isinstance(raw, list):
+        return default
+    items = [str(x).strip() for x in raw if str(x).strip()]
+    return tuple(items) if items else default
 
 
 def _resolve_path(value: str, base: Path) -> Path:
@@ -43,10 +52,26 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
     memory = raw.get("memory") or {}
     agent = raw.get("agent") or {}
     meta = raw.get("phaust") or {}
+    shell = raw.get("shell") or {}
 
     ws_root = config.workspace_root
     if isinstance(workspace.get("root"), str) and workspace["root"].strip():
         ws_root = _resolve_path(workspace["root"].strip(), base)
+
+    base_shell = config.shell
+    shell_cfg = ShellConfig(
+        enabled=bool(shell.get("enabled", base_shell.enabled)),
+        require_approval=bool(
+            shell.get("require_approval", base_shell.require_approval)
+        ),
+        timeout_seconds=int(
+            shell.get("timeout_seconds", base_shell.timeout_seconds)
+        ),
+        max_output_bytes=int(
+            shell.get("max_output_bytes", base_shell.max_output_bytes)
+        ),
+        allow=_parse_shell_allow(shell.get("allow"), base_shell.allow),
+    )
 
     return PhaustConfig(
         model=str(llm.get("model", config.model)),
@@ -69,6 +94,7 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
         iteration=int(meta.get("iteration", config.iteration)),
         name=str(meta.get("name", config.name)),
         agents_md=str(agent.get("agents_md", config.agents_md)),
+        shell=shell_cfg,
     )
 
 

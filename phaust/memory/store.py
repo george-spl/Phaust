@@ -249,6 +249,18 @@ class MemoryStore:
             conn.commit()
         return cur.rowcount > 0
 
+    def get_episode(self, entry_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, text, source, tags, created_at FROM episodes WHERE id = ?",
+                (entry_id,),
+            ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["tags"] = json.loads(d.get("tags") or "[]")
+        return d
+
     def list_episodes(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(

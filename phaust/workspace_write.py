@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 MAX_WRITE_BYTES = 512_000
 MAX_DIFF_LINES = 120
 
-WRITE_TOOL_NAMES = frozenset({"edit_file", "write_file", "delete_file"})
+WRITE_TOOL_NAMES = frozenset({"create_file", "edit_file", "write_file", "delete_file"})
 
 WRITE_BLOCKED_DIR_NAMES = {
     ".git",
@@ -85,10 +85,10 @@ def prepare_edit_file(
     if err:
         return err
 
-    if not target.is_file():
+    if not target.is_file(): # type: ignore
         return {"error": f"Not a file (edit requires existing file): {path}"}
 
-    before = target.read_text(encoding="utf-8", errors="replace")
+    before = target.read_text(encoding="utf-8", errors="replace") # type: ignore
     if not before.strip():
         return {
             "error": "File is empty — use write_file, not edit_file",
@@ -111,7 +111,7 @@ def prepare_edit_file(
         }
 
     after = before.replace(old_string, new_string, 1)
-    rel = target.relative_to(ws.root).as_posix()
+    rel = target.relative_to(ws.root).as_posix() # type: ignore
 
     return {
         "action": "edit_file",
@@ -132,15 +132,15 @@ def prepare_write_file(ws: Workspace, path: str, content: str) -> dict[str, Any]
     if len(content.encode("utf-8")) > MAX_WRITE_BYTES:
         return {"error": f"Content too large (max {MAX_WRITE_BYTES} bytes)"}
 
-    rel = target.relative_to(ws.root).as_posix()
-    exists = target.exists()
+    rel = target.relative_to(ws.root).as_posix() # type: ignore
+    exists = target.exists() # type: ignore
 
-    if exists and target.is_dir():
+    if exists and target.is_dir(): # type: ignore
         return {"error": f"Path is a directory: {path}"}
 
     before = ""
-    if exists and target.is_file():
-        before = target.read_text(encoding="utf-8", errors="replace")
+    if exists and target.is_file(): # type: ignore
+        before = target.read_text(encoding="utf-8", errors="replace") # type: ignore
         summary = f"Overwrite {rel} ({len(before)} → {len(content)} chars)"
     else:
         summary = f"Create new file {rel} ({len(content)} chars)"
@@ -161,21 +161,43 @@ def prepare_write_file(ws: Workspace, path: str, content: str) -> dict[str, Any]
     }
 
 
+def prepare_create_file(ws: Workspace, path: str, content: str) -> dict[str, Any]:
+    """Validate creating a new file only (fails if path already exists)."""
+    target, err = _check_writable_path(ws, path)
+    if err:
+        return err
+
+    if target.exists(): # type: ignore
+        if target.is_file(): # type: ignore
+            return {
+                "error": f"File already exists: {path}",
+                "path": path,
+                "hint": "Use read_file then edit_file or write_file to change it.",
+            }
+        return {"error": f"Path already exists as a directory: {path}"}
+
+    proposal = prepare_write_file(ws, path, content)
+    if proposal.get("error"):
+        return proposal
+    proposal["action"] = "create_file"
+    return proposal
+
+
 def prepare_delete_file(ws: Workspace, path: str) -> dict[str, Any]:
     """Validate file deletion and return a proposal (no disk change)."""
     target, err = _check_writable_path(ws, path)
     if err:
         return err
 
-    if not target.exists():
+    if not target.exists(): # type: ignore
         return {"error": f"File not found: {path}"}
-    if target.is_dir():
+    if target.is_dir(): # type: ignore
         return {"error": f"Path is a directory: {path}"}
-    if not target.is_file():
+    if not target.is_file(): # type: ignore
         return {"error": f"Not a file: {path}"}
 
-    before = target.read_text(encoding="utf-8", errors="replace")
-    rel = target.relative_to(ws.root).as_posix()
+    before = target.read_text(encoding="utf-8", errors="replace") # type: ignore
+    rel = target.relative_to(ws.root).as_posix() # type: ignore
     lines = before.splitlines()
     preview = "\n".join(f"- {line}" for line in lines[:15])
     if len(lines) > 15:
@@ -208,7 +230,7 @@ def apply_proposal(proposal: dict[str, Any], ws: Workspace) -> dict[str, Any]:
         return err
 
     if proposal.get("delete"):
-        target.unlink()
+        target.unlink() # type: ignore
         return {
             "applied": True,
             "deleted": True,
@@ -217,15 +239,18 @@ def apply_proposal(proposal: dict[str, Any], ws: Workspace) -> dict[str, Any]:
         }
 
     after = proposal.get("after", "")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(after, encoding="utf-8", newline="\n")
+    target.parent.mkdir(parents=True, exist_ok=True) # type: ignore
+    target.write_text(after, encoding="utf-8", newline="\n") # type: ignore
 
-    return {
+    result: dict[str, Any] = {
         "applied": True,
         "path": path,
         "action": proposal.get("action"),
         "bytes": len(after.encode("utf-8")),
     }
+    if proposal.get("action") == "create_file" or proposal.get("is_new_file"):
+        result["created"] = True
+    return result
 
 
 def print_proposal(proposal: dict[str, Any]) -> None:
@@ -254,6 +279,11 @@ def register_write_tools(agent: Agent, workspace: Workspace) -> None:
     def edit_file(path: str, old_string: str, new_string: str) -> dict:
         """Propose replacing exactly one occurrence of old_string in a file. User must approve before write."""
         return prepare_edit_file(workspace, path, old_string, new_string)
+
+    @agent.tool
+    def create_file(path: str, content: str) -> dict:
+        """Create a new file that must not exist yet. No read_file needed. User must approve."""
+        return prepare_create_file(workspace, path, content)
 
     @agent.tool
     def write_file(path: str, content: str) -> dict:
