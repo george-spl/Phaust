@@ -1,6 +1,8 @@
-# Phaust-1
+# Phaust-2
 
-**P**ractical **H**elper **A**utomated **U**tility **S**ystem — Iteration 1
+**P**ractical **H**elper **A**utomated **U**tility **S**ystem — Iteration 2 (repo: Phaust-1)
+
+Successor to **Phaust-1** (`phaust-1-regression-complete`). Same local agent; upgraded architecture — see [docs/ITERATIONS.md](docs/ITERATIONS.md).
 
 A local, private AI agent that runs in your terminal. It uses a local LLM (via [LM Studio](https://lmstudio.ai) or any OpenAI-compatible server), SQLite memory, and workspace tools (read, grep, and approved writes).
 

@@ -11,6 +11,21 @@ from phaust.shell import ShellConfig, default_shell_config
 
 
 @dataclass(frozen=True)
+class RetrievalConfig:
+    hybrid: bool = True
+    filename_boost: float = 0.4
+    lexical_weight: float = 0.25
+    query_expansion: bool = True
+
+
+@dataclass(frozen=True)
+class TaskConfig:
+    enabled: bool = True
+    storage_dir: str = "Memory/tasks"
+    auto_checkpoint: bool = True
+
+
+@dataclass(frozen=True)
 class PhaustConfig:
     model: str = "qwen/qwen3.5-9b"
     base_url: str = "http://127.0.0.1:1234/v1"
@@ -25,10 +40,12 @@ class PhaustConfig:
     max_tool_rounds: int = 12
     max_write_proposals: int = 2
     require_write_approval: bool = True
-    iteration: int = 1
-    name: str = "Phaust-1"
+    iteration: int = 2
+    name: str = "Phaust-2"
     agents_md: str = "AGENTS.md"
     shell: ShellConfig = field(default_factory=default_shell_config)
+    tasks: TaskConfig = field(default_factory=TaskConfig)
+    retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
 
 
 def _parse_shell_allow(raw: Any, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -53,6 +70,7 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
     agent = raw.get("agent") or {}
     meta = raw.get("phaust") or {}
     shell = raw.get("shell") or {}
+    tasks = raw.get("tasks") or {}
 
     ws_root = config.workspace_root
     if isinstance(workspace.get("root"), str) and workspace["root"].strip():
@@ -95,6 +113,25 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
         name=str(meta.get("name", config.name)),
         agents_md=str(agent.get("agents_md", config.agents_md)),
         shell=shell_cfg,
+        tasks=TaskConfig(
+            enabled=bool(tasks.get("enabled", config.tasks.enabled)),
+            storage_dir=str(tasks.get("storage_dir", config.tasks.storage_dir)),
+            auto_checkpoint=bool(
+                tasks.get("auto_checkpoint", config.tasks.auto_checkpoint)
+            ),
+        ),
+        retrieval=RetrievalConfig(
+            hybrid=bool(memory.get("hybrid_retrieval", config.retrieval.hybrid)),
+            filename_boost=float(
+                memory.get("filename_boost", config.retrieval.filename_boost)
+            ),
+            lexical_weight=float(
+                memory.get("lexical_weight", config.retrieval.lexical_weight)
+            ),
+            query_expansion=bool(
+                memory.get("query_expansion", config.retrieval.query_expansion)
+            ),
+        ),
     )
 
 

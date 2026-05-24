@@ -1,21 +1,35 @@
 # Phaust roadmap
 
-## Phaust-1 (current)
+## Phaust-1 (tag: `phaust-1-regression-complete`)
 
 - Local console agent, SQLite memory, workspace read/write with approval
 - Grounded answers after `read_file` (explain mode)
 - Write path: intent detection, single nudge, XML tool-call parsing, clean post-write replies
+- Regression block R1–R7: **6 PASS, 1 PARTIAL** (R4 semantic search at tag time; R4 later **PASS** in Phaust-2)
 
-## Phaust-2 (in progress on `experimental`)
+## Phaust-2 (current on `experimental`)
+
+Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
+
+### Architecture
+
+| Piece | Status |
+|-------|--------|
+| `phaust/orchestration/` | **Done** |
+| `phaust/tasks/` | **Done** |
+| `phaust/memory/retrieval.py` | **Done** |
+| `agent.py` slim-down | **In progress** — synthesis still in agent |
+
+### Features
 
 | Area | Status |
 |------|--------|
-| **Config** | Done — `phaust.toml` + `phaust/config.py` |
-| **Rules** | Done — `AGENTS.md` + `phaust/prompts.py` |
-| **Shell** | Done — `run_command` with allowlisted commands, cwd jail, timeout, output cap |
-| **Tasks** | Multi-step task mode with checkpoints and resume |
-| **Memory** | Smarter fact keys (user vs agent identity), optional memory review UI |
-| **Models** | Per-task model profiles (fast vs reasoning) |
-| **Packaging** | Optional `phaust` CLI entry point, config file instead of editing `agent.py` |
+| **Config** | Done — `phaust.toml` iteration 2 |
+| **Rules** | Done — `AGENTS.md` identity + iteration history |
+| **Shell** | Done |
+| **Tasks** | Done — multi-step mode, checkpoints, REPL commands |
+| **Memory** | Done — hybrid retrieval, full search_semantic output |
+| **Models** | Planned — per-task model profiles |
+| **Packaging** | Planned — optional `phaust` CLI entry point |
 
-Contributions and experiments welcome on branch `experimental`.
+Contributions welcome on branch `experimental`.

@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
 from phaust.memory.embeddings import (
     cosine,
     embed_pair,
     pack_embedding,
+)
+from phaust.memory.retrieval import (
+    expanded_queries,
+    extract_file_hints,
+    merge_search_results,
+    rank_episodes,
 )
 from phaust.memory.store import MemoryStore
 
@@ -25,6 +30,10 @@ class SemanticMemory:
     model: str = "qwen/qwen3.5-9b"
     embedding_model: str | None = None
     max_episodes: int = 500
+    hybrid_retrieval: bool = True
+    filename_boost: float = 0.4
+    lexical_weight: float = 0.25
+    query_expansion: bool = True
 
     def __post_init__(self) -> None:
         self.base_url = self.base_url.rstrip("/")
@@ -65,16 +74,42 @@ class SemanticMemory:
             "pruned": pruned,
         }
 
-    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        try:
-            top_k = int(top_k)
-        except (TypeError, ValueError):
-            top_k = 5
+    def _embed_score(
+        self,
+        query: str,
+        entry: dict[str, Any],
+        *,
+        corpus: list[str],
+        query_vec: list[float],
+        backend: str,
+    ) -> float:
+        stored = entry.get("embedding")
+        if stored and entry.get("embedding_backend") == backend:
+            entry_vec = stored
+        else:
+            entry_vec, _ = embed_pair(
+                entry["text"],
+                base_url=self.base_url,
+                api_key=self.api_key,
+                model=self.embedding_model or self.model,
+                corpus=corpus,
+                backend=backend,
+            )
+        return cosine(query_vec, entry_vec)
+
+    def _search_single(
+        self,
+        query: str,
+        entries: list[dict[str, Any]],
+        *,
+        top_k: int,
+        hints: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         query = query.strip()
-        entries = self.db.list_episodes()
         if not query or not entries:
             return []
 
+        hints = hints if hints is not None else extract_file_hints(query)
         corpus = [query] + [e["text"] for e in entries]
         query_vec, backend = embed_pair(
             query,
@@ -85,25 +120,27 @@ class SemanticMemory:
             backend=None,
         )
 
+        if self.hybrid_retrieval:
+            return rank_episodes(
+                query,
+                entries,
+                embed_score_fn=lambda q, entry: self._embed_score(
+                    q, entry, corpus=corpus, query_vec=query_vec, backend=backend
+                ),
+                top_k=top_k,
+                filename_boost=self.filename_boost,
+                lexical_weight=self.lexical_weight,
+            )
+
         scored: list[tuple[float, dict[str, Any]]] = []
         for entry in entries:
-            stored = entry.get("embedding")
-            if stored and entry.get("embedding_backend") == backend:
-                entry_vec = stored
-            else:
-                entry_vec, _ = embed_pair(
-                    entry["text"],
-                    base_url=self.base_url,
-                    api_key=self.api_key,
-                    model=self.embedding_model or self.model,
-                    corpus=corpus,
-                    backend=backend,
-                )
-            score = cosine(query_vec, entry_vec)
+            score = self._embed_score(
+                query, entry, corpus=corpus, query_vec=query_vec, backend=backend
+            )
             scored.append((score, entry))
-
         scored.sort(key=lambda x: x[0], reverse=True)
-        results = []
+
+        results: list[dict[str, Any]] = []
         for score, entry in scored[:top_k]:
             if score <= 0:
                 continue
@@ -118,6 +155,27 @@ class SemanticMemory:
                 }
             )
         return results
+
+    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        try:
+            top_k = int(top_k)
+        except (TypeError, ValueError):
+            top_k = 5
+        entries = self.db.list_episodes()
+        query = query.strip()
+        if not query or not entries:
+            return []
+
+        hints = extract_file_hints(query)
+        if self.query_expansion and (hints or len(query) > 40):
+            queries = expanded_queries(query, hints)
+            lists = [
+                self._search_single(q, entries, top_k=top_k + 2, hints=hints)
+                for q in queries[:6]
+            ]
+            return merge_search_results(lists, top_k=top_k)
+
+        return self._search_single(query, entries, top_k=top_k, hints=hints)
 
     def forget(self, entry_id: str) -> dict[str, Any]:
         if not self.db.delete_episode(entry_id):
@@ -165,11 +223,14 @@ class SemanticMemory:
         hits = self.search(query, top_k=top_k)
         if not hits:
             return ""
-        lines = [
-            f"- ({h['score']}) {h['text']}"
-            + (f" [{', '.join(h['tags'])}]" if h.get("tags") else "")
-            for h in hits
-        ]
+        lines = []
+        for h in hits:
+            line = f"- ({h['score']}) {h['text']}"
+            if h.get("matched_hints"):
+                line += f" [matched: {', '.join(h['matched_hints'])}]"
+            if h.get("tags"):
+                line += f" [{', '.join(h['tags'])}]"
+            lines.append(line)
         return "<semantic_memory>\n" + "\n".join(lines) + "\n</semantic_memory>"
 
     def build_recall_block(self, query: str, top_k: int = 8) -> str:
@@ -178,7 +239,8 @@ class SemanticMemory:
         if not query:
             return ""
 
-        extra_terms: list[str] = []
+        hints = extract_file_hints(query)
+        extra_terms: list[str] = list(hints)
         lower = query.lower()
         for term in (
             "cursor",
@@ -188,28 +250,32 @@ class SemanticMemory:
             "remember",
             "phaust",
             "archived",
+            "stress test",
+            "line one",
         ):
-            if term in lower:
+            if term in lower and term not in extra_terms:
                 extra_terms.append(term)
 
         seen: set[str] = set()
-        hits: list[dict[str, Any]] = []
-        for q in [query, *extra_terms]:
-            for hit in self.search(q, top_k=top_k):
-                eid = str(hit.get("id", ""))
-                if eid and eid not in seen:
-                    seen.add(eid)
-                    hits.append(hit)
+        lists: list[list[dict[str, Any]]] = []
+        for q in expanded_queries(query, hints):
+            lists.append(self.search(q, top_k=top_k))
+        for term in extra_terms:
+            if term.lower() not in query.lower():
+                lists.append(self.search(term, top_k=top_k))
 
-        hits.sort(key=lambda h: float(h.get("score") or 0), reverse=True)
-        hits = hits[:top_k]
+        hits = merge_search_results(lists, top_k=top_k)
 
         parts: list[str] = []
         if hits:
             parts.append("<episodes_matching_query>")
             for hit in hits:
+                hint_note = ""
+                if hit.get("matched_hints"):
+                    hint_note = f" matched={hit['matched_hints']}"
                 parts.append(
-                    f"### id={hit['id']} (score={hit.get('score')})\n{hit.get('text', '')}"
+                    f"### id={hit['id']} (score={hit.get('score')}{hint_note})\n"
+                    f"{hit.get('text', '')}"
                 )
             parts.append("</episodes_matching_query>")
 
@@ -227,11 +293,19 @@ class SemanticMemory:
         if not parts:
             return ""
 
+        file_note = ""
+        if hints:
+            file_note = (
+                f"Query mentions file/artifact: {', '.join(hints)}. "
+                "Prefer episodes that reference those names.\n\n"
+            )
+
         return (
             "<memory_recall>\n"
             "The user is asking about past conversations. Use this archive — do not "
             "claim you have no record until you have checked these episodes. "
             "For a specific id use recall_episode.\n\n"
+            + file_note
             + "\n\n".join(parts)
             + "\n</memory_recall>"
         )

@@ -1,4 +1,4 @@
-"""Phaust-1 — local agent entry point."""
+"""Phaust-2 — local agent entry point."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from phaust.prompts import build_system_prompt, load_agents_instructions
 from phaust.workspace import Workspace, register_readonly_tools
 from phaust.workspace_write import register_write_tools
 from phaust.shell import register_shell_tools
+from phaust.tasks import TaskManager, TaskStore
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 
@@ -51,6 +52,19 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
     agent.config_path = config_path
     agent.config_name = config.name
     agent.agents_md_path = agents_path
+
+    if config.tasks.enabled:
+        tasks_dir = (ws_root / config.tasks.storage_dir).resolve()
+        agent.task_manager = TaskManager(
+            TaskStore(tasks_dir),
+            auto_checkpoint=config.tasks.auto_checkpoint,
+        )
+
+    assert agent.semantic is not None
+    agent.semantic.hybrid_retrieval = config.retrieval.hybrid
+    agent.semantic.filename_boost = config.retrieval.filename_boost
+    agent.semantic.lexical_weight = config.retrieval.lexical_weight
+    agent.semantic.query_expansion = config.retrieval.query_expansion
 
     @agent.context
     def time_context() -> str:

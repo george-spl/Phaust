@@ -1,8 +1,8 @@
 # Phaust configuration — edit paths and model for your LM Studio setup.
 
 [phaust]
-name = "Phaust-1"
-iteration = 1
+name = "Phaust-2"
+iteration = 2
 
 [llm]
 model = "qwen/qwen3.5-9b"
@@ -20,12 +20,21 @@ max_messages = 50
 compact_batch = 10
 max_episodes = 500
 semantic_top_k = 5
+hybrid_retrieval = true
+filename_boost = 0.4
+lexical_weight = 0.25
+query_expansion = true
 
 [agent]
 agents_md = "AGENTS.md"
 max_tool_rounds = 12
 max_write_proposals = 2
 require_write_approval = true
+
+[tasks]
+enabled = true
+storage_dir = "Memory/tasks"
+auto_checkpoint = true
 
 [shell]
 enabled = true
