@@ -20,6 +20,14 @@ _NO_MEMORY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Describing/logging a test (e.g. "scores for remember nothing, enable") — not an opt-out.
+_NO_MEMORY_LOGGING_MENTION_RE = re.compile(
+    r"\b(?:scores?|self-assessment|block\s+[a-z0-9]+|R5\w*|append\b.*\b(?:scores?|regression))"
+    r".{0,80}\bremember\s+nothing\b"
+    r"|\bremember\s+nothing\b.{0,40}\b(?:,\s*enable|enable\s+remembering)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _ENABLE_MEMORY_RE = re.compile(
     r"\b(?:remember|save|store)\s+(?:things|stuff|memories|this\s+session|normally|everything)\s+again\b"
     r"|\b(?:enable|turn\s+on)\s+(?:memory|remembering)(?:\s+writes?)?(?:\s+again)?\b"
@@ -78,6 +86,8 @@ class ContextMemory:
     @staticmethod
     def user_requests_no_memory(message: str) -> bool:
         if _RHETORICAL_MEMORY_RE.search(message):
+            return False
+        if _NO_MEMORY_LOGGING_MENTION_RE.search(message):
             return False
         return bool(_NO_MEMORY_RE.search(message))
 

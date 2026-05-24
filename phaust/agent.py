@@ -299,7 +299,9 @@ class Agent:
                 "<brevity>\n"
                 "The user's message is very short (a number, yes/no, or single word). "
                 "Reply in one brief sentence unless they asked for detail. "
-                "Do not say 'ready for task #N' or treat each digit as a new task.\n"
+                "If the message is only a digit (1, 2, 3), reply with just that digit or "
+                "one word (e.g. '1' or 'Two.'). Do not say 'ready for task #N', "
+                "'first/second/third task', or ask what they want next.\n"
                 "</brevity>"
             )
 
@@ -999,7 +1001,14 @@ class Agent:
 
         self._files_read_this_turn = set()
         tool_rounds = 0
-        wants_edit = self._user_requests_file_change(user_message)
+        wants_logging = bool(_LOGGING_TASK_RE.search(user_message))
+        wants_git_staging = self._user_requests_git_staging(user_message)
+        wants_fact_recall = self._user_requests_fact_recall(user_message)
+        wants_edit = (
+            self._user_requests_file_change(user_message)
+            or self._user_requests_append(user_message)
+            or wants_logging
+        )
         wants_create = self._user_requests_create(user_message)
         wants_memorize = self._user_requests_memorize(user_message)
         wants_recall = (
@@ -1008,9 +1017,6 @@ class Agent:
             or bool(re.search(r"\brecall\b", user_message, re.I))
             or bool(_CROSS_SESSION_RE.search(user_message))
         )
-        wants_logging = bool(_LOGGING_TASK_RE.search(user_message))
-        wants_git_staging = self._user_requests_git_staging(user_message)
-        wants_fact_recall = self._user_requests_fact_recall(user_message)
         if wants_memorize and not self.context_memory.memory_writes_enabled(): # type: ignore
             reply = (
                 "Memory writes are disabled this session. "
@@ -1362,6 +1368,7 @@ class Agent:
             sources = self._grounding_from_tool_results(round_results)
             skip_synthesis = (
                 wants_edit
+                or wants_logging
                 or self._round_includes_write_tools(tool_calls)
                 or self._round_includes_shell_tools(tool_calls)
             )

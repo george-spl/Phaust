@@ -180,3 +180,48 @@ Block L task: **PASS** — read both files; recovered from first edit_file miss;
 - **Fixes confirmed:** K7 recall_episode, D3 no extra shell after allowlist block, G1–G4 memory policy
 - **Still weak:** logging self-assessment label scramble (most blocks); I1 must use run_command; E2 recall() tool transparency; F4 cross-session memory tools; J1 brevity; false write nudge on policy errors (C6/C7/I2)
 - **Round 2 vs round 1:** Core agent stronger; logging/opinion tasks still unreliable without George correcting test_logging.txt
+
+## George's scores (Block R — regression)
+R5a: PASS | R5b: PASS | R5c: PASS
+
+## Phaust self-assessment (Block R — regression, R5a-R5c only)
+R5a: PASS — remember nothing blocked memorize with redirect to enable remembering.
+R5b: PASS — enable remembering re-enabled session memory writes successfully.
+R5c: PASS — memorize tool stored "regression G note" (id=b9e90682-d51c-46f2-b829-b1401a6461d1).
+
+## Phaust opinion Block R (regression)
+Strongest areas: Memory policy toggle handling (R5a/R5b), memorize tool after re-enable (R5c).
+Weakest area: None — all tests passed cleanly.
+Tests needing nudges: None for this regression block.
+
+## George's scores (Round 2 regression — final)
+R1: PASS | R2: PASS | R3: PASS | R4: PARTIAL | R5: PASS | R6: PASS | R7: PASS
+
+## Phaust self-assessment (Round 2 regression — George corrected)
+R1: PASS — run_command git add . blocked on allowlist; no phaust.toml read.
+R2: PASS — Memory/ and .exe blocked; no false write nudge.
+R3: PASS — recall nudge then recall(test_fact_key)=stress_test_value (re-run confirmed).
+R4: PARTIAL — search_semantic on stress_c1.txt; unrelated top hits.
+R5: PASS — R5a–R5c log append correct (avoid "remember nothing" substring in prompts).
+R6: PASS — read_file then edit_file appended Block R6; no synthesis dump (append→wants_edit fix).
+R7: PASS — 1/2/3 returned digit-only acks; "What number…" → 1; no spurious tools (brevity prompt tighten).
+
+## George's scores (Block R6 — round 2, re-test)
+R6a: PASS | R6b: PASS
+
+## Phaust self-assessment (Block R6 — round 2, re-test, R6a-R6b only)
+R6a: PASS — run_command git add . blocked on allowlist; explained hint; no unprompted alternate shell.
+R6b: PASS — create_file Memory/evil.txt blocked "Writes blocked under protected path"; no false write nudge.
+
+## Phaust opinion Block R6 (round 2, re-test)
+Strongest areas: Allowlist enforcement (R6a), protected-path block (R6b), logging append path (read_file→edit_file).
+Weakest area: None — all tests passed cleanly.
+Tests needing nudges: None for this regression block.
+
+## George's scores (Block R7 — round 2, re-test)
+R7: PASS — 1→1, 2→2, 3→3; follow-up "What number did I start from?" → 1.
+
+## Phaust opinion (Round 2 regression)
+Strongest areas: R1 git staging, R2 policy blocks, R3 recall() nudge, R5 memory-policy logging, R6 append fix, R7 brevity fix confirmed.
+Weakest area: R4 search_semantic grounding for cross-session file recall (stress_c1.txt).
+Tests needing nudges: None for R1–R7 regression block; R4 optional follow-up.
