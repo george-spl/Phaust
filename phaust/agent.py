@@ -42,7 +42,11 @@ from phaust.orchestration import (
     should_skip_synthesis,
     snapshots_from_results,
 )
-from phaust.orchestration.constants import MEMORY_RECALL_TOOLS, MEMORY_STORE_TOOLS
+from phaust.orchestration.constants import (
+    MEMORY_DIRECT_RECALL_TOOLS,
+    MEMORY_RECALL_TOOLS,
+    MEMORY_STORE_TOOLS,
+)
 from phaust.orchestration.policy import (
     build_tool_recovery_nudge,
     round_includes_tools,
@@ -567,7 +571,7 @@ class Agent:
                 self._persist()
                 return reply
 
-            if round_includes_tools(tool_calls, MEMORY_RECALL_TOOL_NAMES):
+            if round_includes_tools(tool_calls, MEMORY_DIRECT_RECALL_TOOLS):
                 recall_reply = format_memory_recall_outcome(round_results)
                 if recall_reply and not wants_edit:
                     self.context_memory.append_message( # type: ignore

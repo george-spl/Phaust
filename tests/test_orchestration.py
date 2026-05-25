@@ -34,6 +34,35 @@ def test_explicit_search_semantic_skips_recall_past():
     assert not intent.recall_past
 
 
+def test_pathfinder_narrative_not_recall_past():
+    msg = (
+        "We ended last session right when we were about to be attacked "
+        "by an enemy ship squadron. The admiral of the fleet is a female half-ork "
+        "that killed Flint. We gathered all our allies, and we have our own squadron."
+    )
+    intent = classify_turn(msg)
+    assert not intent.recall_past
+    assert not intent.memory_question
+    assert intent.memorize
+
+
+def test_pause_and_archive_memorize():
+    intent = classify_turn("We will pause and archive, so we can resume later.")
+    assert intent.memorize
+    assert not intent.recall_past
+
+
+def test_stress_a3_still_recalls():
+    intent = classify_turn("You don't remember our last session?")
+    assert intent.recall_past
+
+
+def test_search_semantic_not_direct_recall_tool():
+    from phaust.orchestration.constants import MEMORY_DIRECT_RECALL_TOOLS
+
+    assert "search_semantic" not in MEMORY_DIRECT_RECALL_TOOLS
+
+
 def test_format_write_applied():
     from phaust.orchestration.outcomes import format_write_outcome
 

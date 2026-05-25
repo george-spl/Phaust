@@ -40,8 +40,19 @@ GIT_STAGING = re.compile(
     re.I,
 )
 FACT_RECALL = re.compile(r"^\s*recall\s+([a-z_][\w]*)\s*$", re.I)
+# Question-oriented cross-session recall — not bare "last session" in user narratives
 CROSS_SESSION = re.compile(
-    r"\b(?:what did we do|in testing|last session|prior session|stress_c1|earlier today)\b",
+    r"\b(?:what did we do|in testing|prior session|stress_c1|earlier today"
+    r"|(?:what|how|do you|did we).{0,50}last session)\b",
+    re.I,
+)
+MEMORIZE_ARCHIVE = re.compile(
+    r"\b(?:pause and archive|archive (?:this|everything|the campaign|for later)"
+    r"|save (?:this |everything )?for later|memorize this campaign)\b",
+    re.I,
+)
+NARRATIVE_NEW_CONTEXT = re.compile(
+    r"\b(?:we ended last session|last session (?:right )?when|our (?:campaign|party|allies|squadron))\b",
     re.I,
 )
 LOGGING_TASK = re.compile(

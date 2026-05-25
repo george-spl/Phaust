@@ -109,12 +109,17 @@ def should_nudge_recall(
     memory_recall_this_turn: bool,
     budget: NudgeBudget,
 ) -> bool:
+    from phaust.orchestration.intent import is_supplying_new_context
+
+    if is_supplying_new_context(intent.message):
+        return False
     return (
         (intent.fact_recall or intent.recall_past)
         and not intent.explicit_memory_tool
         and not memory_recall_this_turn
         and budget.recall < 1
         and not intent.logging_task
+        and not intent.memorize
     )
 
 

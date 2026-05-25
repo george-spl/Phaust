@@ -46,13 +46,27 @@ def _file_change(message: str) -> bool:
 
 
 def _memorize(message: str) -> bool:
+    if p.MEMORIZE_INTENT.search(message) or p.MEMORIZE_ARCHIVE.search(message):
+        return True
     if p.MEMORY_RECALL.search(message) and not re.search(r"\bmemorize\b", message, re.I):
         return False
-    return bool(p.MEMORIZE_INTENT.search(message))
+    # Rich new context (e.g. campaign pause state) — store, do not recall-search
+    if is_supplying_new_context(message) and len(message.strip()) > 120:
+        return True
+    return False
+
+
+def is_supplying_new_context(message: str) -> bool:
+    """User is telling a story to save — not asking what Phaust remembers."""
+    if p.MEMORY_RECALL.search(message):
+        return False
+    return bool(p.NARRATIVE_NEW_CONTEXT.search(message) or p.MEMORIZE_ARCHIVE.search(message))
 
 
 def _recall_past(message: str) -> bool:
     if p.EXPLICIT_MEMORY_TOOL.search(message):
+        return False
+    if is_supplying_new_context(message):
         return False
     return bool(
         p.MEMORY_RECALL.search(message)
