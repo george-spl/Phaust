@@ -84,13 +84,14 @@ def hybrid_score(
     hints: list[str],
     filename_boost: float,
     lexical_weight: float,
+    topic_boost: float = 0.0,
 ) -> float:
     fname = filename_match_score(text, hints)
     lexical = lexical_overlap_score(query, text)
     if hints and fname == 0:
         # Query names a file — generic token overlap must not outrank real file hits.
         lexical *= 0.15
-    score = embed_score + (filename_boost * fname) + (lexical_weight * lexical)
+    score = embed_score + (filename_boost * fname) + (lexical_weight * lexical) + topic_boost
     if hints and fname == 0:
         score = min(score, embed_score * 0.75)
     return min(1.0, score)
@@ -113,16 +114,34 @@ def rank_episodes(
     top_k: int = 5,
     filename_boost: float = 0.4,
     lexical_weight: float = 0.25,
+    topic_hints: list[str] | None = None,
+    topic_boost_weight: float = 0.35,
+    recency_weight: float = 0.0,
+    demote_dev_episodes: bool = False,
     min_score: float = 0.0,
 ) -> list[dict[str, Any]]:
-    """Rank episodes with embedding score plus lexical / filename boosts."""
+    """Rank episodes with embedding score plus lexical / filename / topic boosts."""
+    from phaust.memory.topics import tag_match_score
+
+    from phaust.memory.last_session import is_dev_episode_text, recency_score
+
     hints = extract_file_hints(query)
+    topic_hints = topic_hints or []
+    dates = [str(e.get("created_at") or "") for e in entries if e.get("created_at")]
+    newest = max(dates) if dates else None
+    oldest = min(dates) if dates else None
     scored: list[tuple[tuple[float, float, float, int], float, dict[str, Any]]] = []
 
     for entry in entries:
         text = str(entry.get("text") or "")
         embed = embed_score_fn(query, entry)
         fname = filename_match_score(text, hints)
+        tscore = tag_match_score(entry, topic_hints) if topic_hints else 0.0
+        rscore = (
+            recency_score(str(entry.get("created_at")), newest=newest, oldest=oldest)
+            if recency_weight > 0
+            else 0.0
+        )
         combined = hybrid_score(
             embed_score=embed,
             query=query,
@@ -130,7 +149,11 @@ def rank_episodes(
             hints=hints,
             filename_boost=filename_boost,
             lexical_weight=lexical_weight,
+            topic_boost=topic_boost_weight * tscore + recency_weight * rscore,
         )
+        if demote_dev_episodes and is_dev_episode_text(text):
+            if not topic_hints or "phaust" not in topic_hints:
+                combined *= 0.45
         if combined <= min_score and embed <= min_score:
             continue
         matched = [h for h in hints if h in text.lower()]
@@ -140,6 +163,11 @@ def rank_episodes(
     scored.sort(key=lambda row: row[0], reverse=True)
     results: list[dict[str, Any]] = []
     for _key, score, entry in scored[:top_k]:
+        matched_topics = (
+            [h for h in topic_hints if h in [str(t).lower() for t in (entry.get("tags") or [])]]
+            if topic_hints
+            else []
+        )
         results.append(
             {
                 "id": entry["id"],
@@ -149,6 +177,7 @@ def rank_episodes(
                 "tags": entry.get("tags", []),
                 "created_at": entry.get("created_at"),
                 "matched_hints": [h for h in hints if h in str(entry.get("text") or "").lower()],
+                "matched_topics": matched_topics,
             }
         )
     return results

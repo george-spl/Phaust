@@ -103,5 +103,8 @@ def build_recap(
     else:
         lines.append("- Empty — no in-progress session messages.")
 
-    lines.append("\nCommands: `phaust` (chat), `task help`, `task resume <id>`.")
+    lines.append(
+        "\nCommands: `phaust`, `phaust resume`, `phaust ask \"…\"`, "
+        "`/resume` in chat, `task help`."
+    )
     return "\n".join(lines)

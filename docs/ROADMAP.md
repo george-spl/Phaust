@@ -35,5 +35,24 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | **Models** | Partial — `[llm.synthesis]` profile; per-task profiles still planned |
 | **Packaging** | **Done** — `pip install -e .` and `phaust` CLI |
 | **Recap** | **Done** — `phaust recap` (tasks, facts, episodes, live context) |
+| **Resume / ask** | **Done** — `phaust resume`, `phaust ask`, `/resume` `/recap` in chat |
+| **Topic memory** | **Done** — auto tags on `memorize`, boost `search_semantic` by topic |
+| **Workspace rules** | **Done** — `AGENTS.md` layout (`characters/`, never `Memory/`) |
+
+### Memory UX (v2.1 polish)
+
+| Area | Status |
+|------|--------|
+| Prose memory answers | **Done** — no raw tool dumps for conversational recall |
+| `continue_from` + session pointer | **Done** — `session_state.json` biases “last time” toward latest topic |
+| Recall nudge tuning | **Done** — no nudge when pointer exists; feedback lines not treated as lookups |
+| Intent fixes | **Done** — “make you smarter” ≠ write; narrative “last session” ≠ stress recall |
+
+### Next (v2.2)
+
+- MCP plugin slot in `phaust.toml`
+- Parallel tool reads in one turn
+- Per-task / chat model profiles beyond `[llm.synthesis]`
+- Memory CLI (`phaust memory search`, …)
 
 Contributions welcome on branch `experimental`.

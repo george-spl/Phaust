@@ -3,8 +3,39 @@
 from __future__ import annotations
 
 from phaust.agent import Agent
+from phaust.recap import build_recap
+from phaust.resume import build_resume
 from phaust.tasks import handle_task_command
 from phaust.turn_loop import run_chat_turn
+
+_SLASH_HELP = """Slash commands (no LLM):
+  /recap   — memory & tasks snapshot
+  /resume  — where you left off + suggestions
+  /help    — this list
+Task commands: task help
+"""
+
+
+def _handle_slash(agent: Agent, user: str) -> bool:
+    """Return True if handled (do not send to LLM)."""
+    cmd = user.strip().lower()
+    root = agent.workspace.root if agent.workspace else None
+    if cmd in ("/help", "/?"):
+        print(_SLASH_HELP)
+        return True
+    if cmd == "/recap":
+        if root is None:
+            print("No workspace configured.")
+            return True
+        print(build_recap(root))
+        return True
+    if cmd == "/resume":
+        if root is None:
+            print("No workspace configured.")
+            return True
+        print(build_resume(root))
+        return True
+    return False
 
 
 def run(agent: Agent) -> None:
@@ -26,6 +57,7 @@ def run(agent: Agent) -> None:
     print(f"  context | long-term | semantic | workspace ({'; '.join(extras)})")
     if agent.task_manager is not None:
         print("  tasks: type `task help` (multi-step mode with checkpoints)")
+    print("Slash: /resume /recap /help  |  One-shot: phaust ask \"…\"")
     print("Type 'exit' to quit.\n")
 
     agent.begin_session()
@@ -54,6 +86,8 @@ def run(agent: Agent) -> None:
                         f"{result.get('facts_saved', 0)} facts{id_note}"
                     )
             break
+        if user.startswith("/") and _handle_slash(agent, user):
+            continue
         if agent.task_manager is not None:
             task_reply = handle_task_command(agent.task_manager, user)
             if task_reply is not None:

@@ -76,6 +76,58 @@ def test_explicit_fact_recall_auto_returned():
     )
 
 
+def test_list_episodes_not_auto_returned_for_conversation():
+    from phaust.orchestration.policy import should_auto_return_recall_outcome
+
+    intent = classify_turn("What were we discussing last time?")
+    tool_calls = [{"function": {"name": "list_episodes", "arguments": '{"limit":5}'}}]
+    assert intent.memory_question
+    assert not should_auto_return_recall_outcome(
+        tool_calls, "- ep-1: preview", intent
+    )
+
+
+def test_make_smarter_not_write_intent():
+    intent = classify_turn("I am trying to make you smarter each day, bit by bit.")
+    assert not intent.wants_write
+    assert not intent.file_change
+
+
+def test_hello_phaust_last_time_is_memory_question():
+    from phaust.memory.last_session import is_addressing_phaust_only, is_generic_last_session_query
+
+    msg = "Hello Phaust. What were we discussing last time?"
+    intent = classify_turn(msg)
+    assert intent.memory_question
+    assert is_generic_last_session_query(msg)
+    assert is_addressing_phaust_only(msg)
+
+
+def test_feedback_with_recall_word_not_memory_question():
+    from phaust.orchestration.intent import is_feedback_not_memory
+
+    msg = "Good! Now you can actually recall latest session rather than older ones."
+    assert is_feedback_not_memory(msg)
+    intent = classify_turn(msg)
+    assert not intent.recall_past
+    assert not intent.memory_question
+
+
+def test_no_recall_nudge_when_continue_from_available():
+    from phaust.orchestration.policy import should_nudge_recall
+    from phaust.orchestration.policy import NudgeBudget
+
+    intent = classify_turn("What were we discussing last time?")
+    state = {
+        "last_topic": "starfinder",
+        "last_episode_id": "ep-1",
+        "last_user_preview": "Starfinder character",
+    }
+    assert not should_nudge_recall(
+        intent, memory_recall_this_turn=False, budget=NudgeBudget(), session_state=state
+    )
+
+
 def test_format_write_applied():
     from phaust.orchestration.outcomes import format_write_outcome
 

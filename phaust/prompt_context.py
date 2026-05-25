@@ -39,9 +39,12 @@ def build_system_messages(
     if long_term_block:
         blocks.append(long_term_block)
 
+    ws_root = agent.workspace.root if agent.workspace else None
     if intent.memory_question:
         recall_block = agent.semantic.build_recall_block(  # type: ignore
-            user_message, top_k=max(agent.semantic_top_k, 8)
+            user_message,
+            top_k=max(agent.semantic_top_k, 8),
+            workspace_root=ws_root,
         )
         if recall_block:
             blocks.append(recall_block)

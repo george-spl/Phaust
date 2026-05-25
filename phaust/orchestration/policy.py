@@ -108,10 +108,27 @@ def should_nudge_recall(
     *,
     memory_recall_this_turn: bool,
     budget: NudgeBudget,
+    session_state: dict[str, Any] | None = None,
 ) -> bool:
-    from phaust.orchestration.intent import is_supplying_new_context
+    from phaust.memory.last_session import is_generic_last_session_query
+    from phaust.orchestration.intent import (
+        is_feedback_not_memory,
+        is_supplying_new_context,
+    )
 
     if is_supplying_new_context(intent.message):
+        return False
+    if is_feedback_not_memory(intent.message):
+        return False
+    if (
+        is_generic_last_session_query(intent.message)
+        and session_state
+        and (
+            session_state.get("last_topic")
+            or session_state.get("last_episode_id")
+            or session_state.get("last_user_preview")
+        )
+    ):
         return False
     return (
         (intent.fact_recall or intent.recall_past)
@@ -128,10 +145,10 @@ def should_auto_return_recall_outcome(
     recall_reply: str | None,
     intent: TurnIntent,
 ) -> bool:
-    """Only dump tool output when the user asked for a lookup, not casual chat."""
+    """Only dump tool output for explicit lookups — conversational recall gets prose."""
     if not recall_reply or intent.wants_write:
         return False
-    if round_includes_tools(tool_calls, MEMORY_LOOKUP_TOOLS):
+    if intent.explicit_memory_tool:
         return True
     if intent.fact_recall and round_includes_tools(tool_calls, frozenset({"recall"})):
         return True

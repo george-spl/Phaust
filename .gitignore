@@ -18,6 +18,7 @@ Memory/*.bak
 Memory/archive/
 Memory/voices/
 Memory/*.json
+Memory/session_state.json
 *.db.bak
 stress_test.txt
 *.onnx

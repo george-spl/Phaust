@@ -24,11 +24,15 @@ Built on Phaust-1's safety model and tool set. New structure:
 | `phaust/orchestration/` | Intent → directives → policy → outcomes (no new regex in agent) |
 | `phaust/tasks/` | Multi-step task mode, JSON checkpoints in `Memory/tasks/` |
 | `phaust/memory/retrieval.py` | Hybrid semantic search (filename boost, query expansion) |
+| `phaust/turn_loop.py` | Chat turn loop extracted from `agent.py` |
+| CLI | `phaust`, `phaust recap`, `phaust resume`, `phaust ask` |
 
 Same operator, same workspace, same approval gates — cleaner internals and task/retrieval features.
+
+**v2.1 (operator layer):** Session pointer (`session_state.json`), topic-tagged `memorize`, workspace layout rules (`characters/` not `Memory/`), prose-first answers for “what did we discuss last time”, tuned recall nudges.
 
 **Install:** `pip install -e .` from the repo, then run `phaust` in any directory with `phaust.toml`.
 
 ## Future
 
-See [ROADMAP.md](ROADMAP.md) for packaging, model profiles, and memory review UI.
+See [ROADMAP.md](ROADMAP.md) for MCP, model profiles, and memory CLI.

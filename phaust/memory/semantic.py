@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from phaust.memory.embeddings import (
@@ -17,6 +18,14 @@ from phaust.memory.retrieval import (
     merge_search_results,
     rank_episodes,
 )
+from phaust.memory.last_session import (
+    build_continue_from_block,
+    is_addressing_phaust_only,
+    is_generic_last_session_query,
+    session_search_queries,
+)
+from phaust.memory.topics import extract_topic_hints, infer_topic_tags
+from phaust.session_state import load_session_state
 from phaust.memory.store import MemoryStore
 
 
@@ -49,6 +58,7 @@ class SemanticMemory:
         if not text:
             return {"error": "text cannot be empty"}
 
+        merged_tags = infer_topic_tags(text, extra_tags=tags)
         entry_id = str(uuid.uuid4())
         corpus = [text] + [e["text"] for e in self.db.list_episodes()]
         vec, backend = embed_pair(
@@ -62,7 +72,7 @@ class SemanticMemory:
             entry_id=entry_id,
             text=text,
             source=source,
-            tags=tags,
+            tags=merged_tags or None,
             embedding=pack_embedding(vec),
             embedding_backend=backend,
         )
@@ -72,6 +82,7 @@ class SemanticMemory:
             "id": entry_id,
             "chars": len(text),
             "pruned": pruned,
+            "tags": merged_tags,
         }
 
     def _embed_score(
@@ -104,12 +115,16 @@ class SemanticMemory:
         *,
         top_k: int,
         hints: list[str] | None = None,
+        topic_hints: list[str] | None = None,
+        recency_weight: float = 0.0,
+        demote_dev_episodes: bool = False,
     ) -> list[dict[str, Any]]:
         query = query.strip()
         if not query or not entries:
             return []
 
         hints = hints if hints is not None else extract_file_hints(query)
+        topic_hints = topic_hints if topic_hints is not None else extract_topic_hints(query)
         corpus = [query] + [e["text"] for e in entries]
         query_vec, backend = embed_pair(
             query,
@@ -130,6 +145,9 @@ class SemanticMemory:
                 top_k=top_k,
                 filename_boost=self.filename_boost,
                 lexical_weight=self.lexical_weight,
+                topic_hints=topic_hints,
+                recency_weight=recency_weight,
+                demote_dev_episodes=demote_dev_episodes,
             )
 
         scored: list[tuple[float, dict[str, Any]]] = []
@@ -156,7 +174,13 @@ class SemanticMemory:
             )
         return results
 
-    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        workspace_root: Path | None = None,
+    ) -> list[dict[str, Any]]:
         try:
             top_k = int(top_k)
         except (TypeError, ValueError):
@@ -166,16 +190,66 @@ class SemanticMemory:
         if not query or not entries:
             return []
 
+        generic = is_generic_last_session_query(query)
+        state = (
+            load_session_state(workspace_root.resolve())
+            if workspace_root and generic
+            else {}
+        )
         hints = extract_file_hints(query)
+        topic_hints = extract_topic_hints(query)
+        if state.get("last_topic"):
+            topic_hints = list(
+                dict.fromkeys([str(state["last_topic"]), *topic_hints])
+            )
+        recency_weight = 0.4 if generic else 0.0
+        demote_dev = bool(
+            generic
+            and state.get("last_topic")
+            and str(state["last_topic"]).lower() not in ("phaust",)
+        )
+
+        if generic and state:
+            queries = session_search_queries(query, state, topic_hints=topic_hints)
+            lists = [
+                self._search_single(
+                    q,
+                    entries,
+                    top_k=top_k + 2,
+                    hints=hints,
+                    topic_hints=topic_hints,
+                    recency_weight=recency_weight,
+                    demote_dev_episodes=demote_dev,
+                )
+                for q in queries
+            ]
+            return merge_search_results(lists, top_k=top_k)
+
         if self.query_expansion and (hints or len(query) > 40):
             queries = expanded_queries(query, hints)
             lists = [
-                self._search_single(q, entries, top_k=top_k + 2, hints=hints)
+                self._search_single(
+                    q,
+                    entries,
+                    top_k=top_k + 2,
+                    hints=hints,
+                    topic_hints=topic_hints,
+                    recency_weight=recency_weight,
+                    demote_dev_episodes=demote_dev,
+                )
                 for q in queries[:6]
             ]
             return merge_search_results(lists, top_k=top_k)
 
-        return self._search_single(query, entries, top_k=top_k, hints=hints)
+        return self._search_single(
+            query,
+            entries,
+            top_k=top_k,
+            hints=hints,
+            topic_hints=topic_hints,
+            recency_weight=recency_weight,
+            demote_dev_episodes=demote_dev,
+        )
 
     def forget(self, entry_id: str) -> dict[str, Any]:
         if not self.db.delete_episode(entry_id):
@@ -228,45 +302,77 @@ class SemanticMemory:
             line = f"- ({h['score']}) {h['text']}"
             if h.get("matched_hints"):
                 line += f" [matched: {', '.join(h['matched_hints'])}]"
+            if h.get("matched_topics"):
+                line += f" [topics: {', '.join(h['matched_topics'])}]"
             if h.get("tags"):
                 line += f" [{', '.join(h['tags'])}]"
             lines.append(line)
         return "<semantic_memory>\n" + "\n".join(lines) + "\n</semantic_memory>"
 
-    def build_recall_block(self, query: str, top_k: int = 8) -> str:
+    def build_recall_block(
+        self,
+        query: str,
+        top_k: int = 8,
+        *,
+        workspace_root: Path | None = None,
+    ) -> str:
         """Broader episodic search when the user asks about past conversations."""
         query = query.strip()
         if not query:
             return ""
 
+        generic = is_generic_last_session_query(query)
+        state = (
+            load_session_state(workspace_root.resolve())
+            if workspace_root and generic
+            else {}
+        )
         hints = extract_file_hints(query)
-        extra_terms: list[str] = list(hints)
-        lower = query.lower()
-        for term in (
-            "cursor",
-            "message",
-            "design",
-            "episode",
-            "remember",
-            "phaust",
-            "archived",
-            "stress test",
-            "line one",
-        ):
-            if term in lower and term not in extra_terms:
-                extra_terms.append(term)
+        topic_hints = extract_topic_hints(query)
+        if state.get("last_topic"):
+            topic_hints = list(
+                dict.fromkeys([str(state["last_topic"]), *topic_hints])
+            )
 
-        seen: set[str] = set()
         lists: list[list[dict[str, Any]]] = []
-        for q in expanded_queries(query, hints):
-            lists.append(self.search(q, top_k=top_k))
-        for term in extra_terms:
-            if term.lower() not in query.lower():
-                lists.append(self.search(term, top_k=top_k))
+        if generic and state:
+            for q in session_search_queries(query, state, topic_hints=topic_hints):
+                lists.append(
+                    self.search(q, top_k=top_k, workspace_root=workspace_root)
+                )
+        else:
+            extra_terms: list[str] = list(hints)
+            lower = query.lower()
+            for term in (
+                "cursor",
+                "message",
+                "design",
+                "episode",
+                "remember",
+                "archived",
+            ):
+                if term in lower and term not in extra_terms:
+                    extra_terms.append(term)
+            if "phaust" in lower and not is_addressing_phaust_only(query):
+                extra_terms.append("phaust")
+            if "stress test" in lower or "stress_" in lower:
+                extra_terms.append("stress test")
+
+            for q in expanded_queries(query, hints):
+                lists.append(self.search(q, top_k=top_k, workspace_root=workspace_root))
+            for term in extra_terms:
+                if term.lower() not in query.lower():
+                    lists.append(
+                        self.search(term, top_k=top_k, workspace_root=workspace_root)
+                    )
 
         hits = merge_search_results(lists, top_k=top_k)
 
         parts: list[str] = []
+        if state:
+            block = build_continue_from_block(state)
+            if block:
+                parts.append(block)
         if hits:
             parts.append("<episodes_matching_query>")
             for hit in hits:
@@ -300,11 +406,19 @@ class SemanticMemory:
                 "Prefer episodes that reference those names.\n\n"
             )
 
-        return (
-            "<memory_recall>\n"
+        lead = (
+            "The user is asking about past conversations. Prefer <continue_from> for "
+            '"last time" questions, then summarize in prose — do not paste raw lists.'
+            if generic and state
+            else
             "The user is asking about past conversations. Use this archive — do not "
             "claim you have no record until you have checked these episodes. "
-            "For a specific id use recall_episode.\n\n"
+            "For a specific id use recall_episode."
+        )
+        return (
+            "<memory_recall>\n"
+            + lead
+            + "\n\n"
             + file_note
             + "\n\n".join(parts)
             + "\n</memory_recall>"

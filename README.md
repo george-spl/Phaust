@@ -28,6 +28,8 @@ Start your LLM server, then from your project directory (where `phaust.toml` liv
 ```powershell
 phaust              # interactive chat (default)
 phaust recap        # tasks, facts, episodes — no LLM session
+phaust resume       # recap + where you left off
+phaust ask "…"      # one message, then exit
 phaust -C D:\path\to\project
 ```
 
@@ -56,6 +58,8 @@ Older messages are auto-compacted into episodes (and durable **user** facts) so 
 **Explain vs edit:** For “what does this file do?”, Phaust reads the file and answers from source (synthesis pass in `turn_runner.py`). For “write / edit / add a line”, it skips synthesis and uses the write path with diff approval.
 
 **Orchestration:** Intent, nudges, and outcomes live in `phaust/orchestration/` — not regex soup in `agent.py`. Recoverable tool errors get one retry nudge per turn (e.g. read-before-write).
+
+**Remembering conversations:** Ask “what were we discussing last time?” — Phaust uses `Memory/session_state.json` and answers in **prose** (not raw episode lists). Use `phaust resume` before a session to see the pointer. Character sheets and campaigns belong in `characters/` or `campaigns/`, not `Memory/`.
 
 ## Tools
 
@@ -98,20 +102,20 @@ pyproject.toml       pip install -e . → `phaust` CLI
 phaust.toml          Runtime settings
 AGENTS.md            Project rules (loaded every session)
 phaust/
-  cli.py             `phaust`, `phaust recap`
+  cli.py             `phaust`, `recap`, `resume`, `ask`
+  session_state.py   Last-topic pointer for resume
+  resume.py          `phaust resume` output
   app.py             build_agent(workspace)
   agent.py           Session, memory, tool registration
   turn_loop.py       Chat turn loop (LLM + tools + nudges)
   turn_runner.py     Explain-mode synthesis
   tool_executor.py   Write/shell approval execution
   prompt_context.py  System prompt assembly
-  repl.py            Interactive session loop
-  turn_runner.py     Synthesis pass, API message sanitization
+  repl.py            Interactive session; `/resume` `/recap` `/help`
   reply.py           User-facing reply cleanup
-  recap.py           `phaust recap` snapshot
   orchestration/     Intent, policy, nudges, outcomes
   tasks/             Multi-step task mode
-  memory/            SQLite, compaction, hybrid retrieval
+  memory/            SQLite, compaction, hybrid retrieval, topics, last_session
 docs/
   ARCHITECTURE.md    Layer diagram and design rules
   ROADMAP.md         Phaust-2 status and plans
@@ -151,10 +155,14 @@ Edit **`phaust.toml`** in the project root. Override path with env `PHAUST_CONFI
 | Edit without `read_file` on existing file | Tool error + recovery nudge — call `read_file` then retry |
 | Answer stops after `read_file` on edits | Synthesis skipped for write intent — expected |
 | `pip install` points at wrong venv | Delete `.venv`, recreate, `pip install -e .` again |
+| “Last time” mentions stress tests not your project | Run `phaust resume`; chat once and `exit` to refresh `session_state.json` |
+| Raw episode list instead of a summary | Update Phaust — conversational recall should be prose (see `docs/ARCHITECTURE.md`) |
+| Spurious `recall pending` on “Good!” | Update Phaust — feedback lines should not trigger recall nudge |
 
 ## Inspecting memory
 
 ```powershell
+phaust resume
 phaust recap
 ```
 

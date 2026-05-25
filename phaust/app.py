@@ -94,7 +94,7 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
 
     @agent.tool
     def remember(key: str, value: str) -> dict:
-        """Store one key-value fact in long-term memory (e.g. key=user_name, value=George). Not for episodes or long text — use memorize."""
+        """Store one key-value fact in long-term memory (e.g. key=user_name, value=Alex). Not for episodes or long text — use memorize."""
         blocked = _memory_writes_blocked()
         if blocked:
             return blocked
@@ -144,7 +144,8 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
     @agent.tool
     def search_semantic(query: str, top_k: int = 5) -> dict:
         """Search episodic memory by meaning/similarity (not exact UUID lookup)."""
-        return {"results": sem.search(query, top_k=top_k)}
+        ws = workspace.root if workspace else None
+        return {"results": sem.search(query, top_k=top_k, workspace_root=ws)}
 
     @agent.tool
     def recall_episode(entry_id: str) -> dict:

@@ -63,15 +63,22 @@ def is_supplying_new_context(message: str) -> bool:
     return bool(p.NARRATIVE_NEW_CONTEXT.search(message) or p.MEMORIZE_ARCHIVE.search(message))
 
 
+def is_feedback_not_memory(message: str) -> bool:
+    """Praise or meta commentary — not asking what was remembered."""
+    return bool(p.FEEDBACK_NOT_MEMORY.search(message))
+
+
 def _recall_past(message: str) -> bool:
     if p.EXPLICIT_MEMORY_TOOL.search(message):
         return False
     if is_supplying_new_context(message):
         return False
+    if is_feedback_not_memory(message):
+        return False
     return bool(
         p.MEMORY_RECALL.search(message)
+        or p.RECALL_LOOKUP.search(message)
         or p.EPISODE_UUID.search(message)
-        or re.search(r"\brecall\b", message, re.I)
         or p.CROSS_SESSION.search(message)
     )
 

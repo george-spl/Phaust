@@ -24,6 +24,9 @@ def build_turn_directives(
             "recall_episode, list_episodes, or search_semantic before saying you have "
             "no record. Episodes are summaries — if a detail is missing, say the "
             "episode mentions X but not Y; do not invent.\n"
+            "Answer in clear prose (2–5 sentences). Do NOT paste raw tool output, "
+            "episode id lists, or full archived transcripts as your reply unless the "
+            "user explicitly asked for ids or raw text.\n"
             "</memory_rules>"
         )
 
@@ -90,8 +93,8 @@ def build_turn_directives(
             "You already greeted the user this session. Do NOT open with hello, "
             "good morning, good to see you, or re-introduce yourself. "
             "Respond directly to what they asked.\n"
-            "Speak to George in second person ('you'). Never narrate in third person "
-            "('The user is asking…', 'George wants…'). Give your actual answer.\n"
+            "Speak to the user in second person ('you'). Never narrate in third person "
+            "('The user is asking…', 'they want…'). Give your actual answer.\n"
             "</conversation_rules>"
         )
 

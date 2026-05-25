@@ -30,7 +30,7 @@ MEMORIZE_NUDGE = (
 )
 
 META_NARRATION_NUDGE = (
-    "Respond to George directly in second person. "
+    "Respond to the user directly in second person. "
     "Do not narrate what 'the user' is asking — give your "
     "actual answer or next step."
 )
@@ -41,15 +41,31 @@ def is_logging_refusal(text: str) -> bool:
     return any(phrase in lower for phrase in LOGGING_REFUSAL_PHRASES)
 
 
-def recall_nudge_message(user_message: str, *, fact_recall_key: str | None) -> str:
+def recall_nudge_message(
+    user_message: str,
+    *,
+    fact_recall_key: str | None,
+    session_state: dict | None = None,
+) -> str:
     if fact_recall_key:
         return (
             f"Call recall(key={fact_recall_key!r}) now (native function call). "
             "Do not answer from injected memory text alone."
         )
+    if session_state and (
+        session_state.get("last_topic") or session_state.get("last_episode_id")
+    ):
+        topic = session_state.get("last_topic", "unknown")
+        eid = session_state.get("last_episode_id", "")
+        eid_note = f" recall_episode({eid!r}) if needed." if eid else ""
+        return (
+            "Answer from <continue_from> in the system prompt first. "
+            f"Last topic was {topic!r}.{eid_note} "
+            "Summarize in 2–5 sentences of prose — no raw episode lists."
+        )
     return (
-        "Call search_semantic or recall_episode before answering about "
-        "past sessions or prior tests (native function call)."
+        "Use <memory_recall> / search_semantic or recall_episode, then answer in prose "
+        "(native function call if you still need a tool)."
     )
 
 

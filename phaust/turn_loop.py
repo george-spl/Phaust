@@ -84,6 +84,7 @@ class TurnState:
     empty_write_paths: set[str] = field(default_factory=set)
     file_snapshots: dict[str, str] = field(default_factory=dict)
     last_write_path: str | None = None
+    paths_touched: set[str] = field(default_factory=set)
     tool_rounds: int = 0
 
     @property
@@ -253,10 +254,17 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
         _nudge_user(agent, LOGGING_NUDGE)
         return None
 
+    session_snapshot = None
+    if agent.workspace is not None:
+        from phaust.session_state import load_session_state
+
+        session_snapshot = load_session_state(agent.workspace.root)
+
     if should_nudge_recall(
         state.intent,
         memory_recall_this_turn=state.memory_recall_this_turn,
         budget=state.nudge_budget,
+        session_state=session_snapshot,
     ):
         state.nudge_budget.recall += 1
         print("  → recall pending — nudging model…")
@@ -265,6 +273,7 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
             recall_nudge_message(
                 state.user_message,
                 fact_recall_key=state.intent.fact_recall_key,
+                session_state=session_snapshot,
             ),
         )
         return None
@@ -312,6 +321,7 @@ def _run_tool_round(
             rel = str(result.get("path") or "")
             if rel:
                 state.files_read_this_turn.add(rel)
+                state.paths_touched.add(rel)
         if name in WRITE_TOOL_NAMES:
             state.last_write_path = str(result.get("path") or state.last_write_path or "")
             if is_write_policy_error(result):
@@ -320,6 +330,8 @@ def _run_tool_round(
                 state.write_proposals += 1
             if result.get("applied"):
                 state.write_applied = True
+            if result.get("path"):
+                state.paths_touched.add(str(result["path"]))
             if result.get("cancelled"):
                 state.write_declined = True
         if name in SHELL_TOOL_NAMES:
@@ -419,6 +431,38 @@ def _run_tool_round(
     return None
 
 
+def _persist_session_pointer(agent: Agent, state: TurnState, reply: str) -> None:
+    if agent.workspace is None:
+        return
+    from phaust.memory.topics import infer_topic_tags
+    from phaust.session_state import update_session_state
+
+    topics = infer_topic_tags(f"{state.user_message} {reply}")
+    task_id = None
+    task_title = None
+    if agent.task_manager:
+        task = agent.task_manager.get_active()
+        if task is not None:
+            task_id = task.id
+            task_title = task.title
+    last_ep: str | None = None
+    episodes = agent.db.list_episodes()
+    if episodes:
+        last_ep = str(episodes[-1].get("id") or "") or None
+
+    update_session_state(
+        agent.workspace.root,
+        user_message=state.user_message,
+        assistant_reply=reply,
+        topic=topics[0] if topics else None,
+        topics=topics,
+        files=sorted(state.paths_touched),
+        task_id=task_id,
+        task_title=task_title,
+        last_episode_id=last_ep,
+    )
+
+
 def run_chat_turn(agent: Agent, user_message: str) -> str:
     """Run one user message through the tool loop; return the assistant reply."""
     _apply_session_memory_policy(agent, user_message)
@@ -430,7 +474,13 @@ def run_chat_turn(agent: Agent, user_message: str) -> str:
     )
 
     if state.wants_memorize and not agent.context_memory.memory_writes_enabled():  # type: ignore
-        return _memorize_blocked_reply(agent)
+        reply = _memorize_blocked_reply(agent)
+        _persist_session_pointer(agent, state, reply)
+        return reply
+
+    def _return(reply: str) -> str:
+        _persist_session_pointer(agent, state, reply)
+        return reply
 
     while True:
         prefix = build_system_messages(
@@ -458,14 +508,14 @@ def run_chat_turn(agent: Agent, user_message: str) -> str:
         if not tool_calls:
             reply = _handle_no_tool_calls(agent, state, msg)
             if reply is not None:
-                return reply
+                return _return(reply)
             continue
 
         state.tool_rounds += 1
         if state.tool_rounds > agent.max_tool_rounds:
             agent._persist()
-            return "Stopped: too many tool-call rounds."
+            return _return("Stopped: too many tool-call rounds.")
 
         done = _run_tool_round(agent, state, tool_calls)
         if done is not None:
-            return done
+            return _return(done)

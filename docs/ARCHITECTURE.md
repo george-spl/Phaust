@@ -77,6 +77,26 @@ Cross-session file recall (e.g. `stress_c1.txt`) uses **hybrid ranking**:
 
 Configure in `phaust.toml` `[memory]`: `hybrid_retrieval`, `filename_boost`, `lexical_weight`, `query_expansion`.
 
+### Topic tags (`phaust/memory/topics.py`)
+
+- `memorize` auto-tags episodes (`starfinder`, `pathfinder`, `career`, `tabletop`, `character`, …)
+- `search_semantic` boosts scores when query tags match episode tags
+
+### “Last time” conversations (`phaust/memory/last_session.py`)
+
+When the user asks what you discussed last time (including “Hello Phaust. What were we…?”):
+
+1. **`Memory/session_state.json`** — last topic, message previews, recent files, latest episode id (updated each turn)
+2. **`<continue_from>`** — injected into the system prompt; preferred over older stress-test archives
+3. **Recency ranking** — newer episodes score higher; dev/stress episodes demoted unless the query is about tests
+4. **No “Hello Phaust” → stress search** — greeting the agent by name does not add `phaust` / `stress test` search terms
+
+### Memory replies (policy)
+
+- **Prose by default** — summarize in 2–5 sentences; do not paste raw `list_episodes` / `recall_episode` output unless the user asked for ids or raw text
+- **Auto-return tool dumps** only for explicit commands (`recall user_job`, `list_episodes`, `search_semantic …`) or `recall <fact_key>`
+- **Recall nudge** skipped when `<continue_from>` already has a session pointer; skipped for praise (“Good! Now you can recall…”)
+
 ## Turn loop (`phaust/turn_loop.py`)
 
 - One user message → LLM rounds, tool execution, nudges, terminal outcomes
@@ -95,8 +115,12 @@ Configure in `phaust.toml` `[memory]`: `hybrid_retrieval`, `filename_boost`, `le
 | `prompt_context.py` | System prompt blocks (memory, task mode, directives) |
 | `tool_executor.py` | Tool calls with write/shell approval and read-before-write gate |
 | `reply.py` | Strip thinking blocks and meta-narration from replies |
-| `repl.py` | Interactive `You:` session and task REPL commands |
+| `repl.py` | Interactive `You:` session; slash `/resume`, `/recap`, `/help` |
+| `resume.py` / `session_state.py` | `phaust resume` and per-turn session pointer |
+| `recap.py` | `phaust recap` snapshot |
 | `tool_ui.py` | Terminal formatting for tool results |
+| `memory/last_session.py` | Last-time query detection and continue-from block |
+| `memory/topics.py` | Topic tag inference for memorize and search |
 
 ## Tool recovery (`orchestration/policy.py`)
 
@@ -116,5 +140,5 @@ Example: “when user asks for X, nudge tool Y once”:
 2. Add flag(s) on `TurnIntent` in `intent.py`.
 3. Add directive block in `prompt_blocks.py` if the model needs instructions.
 4. Add `should_nudge_*` in `policy.py` and message in `nudges.py`.
-5. Call from `Agent.chat()` using `NudgeBudget`.
+5. Wire in `turn_loop.run_chat_turn()` using `NudgeBudget`.
 6. Add a test in `tests/test_orchestration.py`.

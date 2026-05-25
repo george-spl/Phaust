@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 
 WRITE_INTENT = re.compile(
-    r"\b(write|add|insert|append|edit|replace|overwrite|create|make|put|delete|remove|clear|empty|"
-    r"comment\s+in|update\s+the\s+file|new\s+file)\b",
+    r"\b(write|add|insert|append|edit|replace|overwrite|create|put|delete|remove|clear|empty|"
+    r"comment\s+in|update\s+the\s+file|new\s+file)\b"
+    r"|\bmake\s+(?:a\s+)?(?:new\s+)?(?:file|changes?\s+to)\b",
     re.I,
 )
 APPEND_INTENT = re.compile(
@@ -16,9 +17,26 @@ APPEND_INTENT = re.compile(
 MEMORY_RECALL = re.compile(
     r"\b(?:do you remember|don'?t you remember|you don'?t remember"
     r"|recall\s+episode|what did we (?:say|discuss|talk about)"
+    r"|what were we (?:discussing|talking about)"
     r"|what (?:did )?I (?:just )?memorize|what I memorized"
     r"|something we discussed|discussed earlier|previous(?:ly)?\s+(?:session|conversation)"
-    r"|sent .* message|message to cursor|earlier today|\brecall\b)\b",
+    r"|(?:last|previous)\s+time\s+we\b|literally\s+last\s+time"
+    r"|sent .* message|message to cursor|earlier today)\b",
+    re.I,
+)
+# Bare "recall" only when requesting a lookup, not "you can recall now" feedback
+RECALL_LOOKUP = re.compile(
+    r"^\s*recall\s+\w|"
+    r"\brecall\s+episode\b|"
+    r"\bdo you recall\b|"
+    r"\bwhat did (?:we|i) recall\b",
+    re.I,
+)
+FEEDBACK_NOT_MEMORY = re.compile(
+    r"^\s*(?:good|great|nice|perfect|excellent|yes|ok|okay)\b"
+    r"|\bimprovements?\s+every\s+day\b"
+    r"|\b(?:now\s+)?you\s+can\s+(?:actually\s+)?recall\b"
+    r"|\b(?:that'?s|this is)\s+(?:better|correct|right)\b",
     re.I,
 )
 MEMORIZE_INTENT = re.compile(
@@ -57,7 +75,7 @@ NARRATIVE_NEW_CONTEXT = re.compile(
 )
 LOGGING_TASK = re.compile(
     r"\btest_logging(?:_\d+)?(?:_\d+-\d+-\d+)?\.txt\b|"
-    r"\b(?:George scores|self-assessment|Phaust overall opinion)\b",
+    r"\b(?:operator scores|test scores|self-assessment|Phaust overall opinion)\b",
     re.I,
 )
 CREATE_FILE = re.compile(
