@@ -79,7 +79,7 @@ Configure in `phaust.toml` `[memory]`: `hybrid_retrieval`, `filename_boost`, `le
 
 ### Topic tags (`phaust/memory/topics.py`)
 
-- `memorize` auto-tags episodes (`starfinder`, `pathfinder`, `career`, `tabletop`, `character`, …)
+- `memorize` auto-tags episodes from content (e.g. `project`, `docs`, `design`, `notes`, …)
 - `search_semantic` boosts scores when query tags match episode tags
 
 ### “Last time” conversations (`phaust/memory/last_session.py`)

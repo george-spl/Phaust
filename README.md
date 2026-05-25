@@ -59,7 +59,7 @@ Older messages are auto-compacted into episodes (and durable **user** facts) so 
 
 **Orchestration:** Intent, nudges, and outcomes live in `phaust/orchestration/` — not regex soup in `agent.py`. Recoverable tool errors get one retry nudge per turn (e.g. read-before-write).
 
-**Remembering conversations:** Ask “what were we discussing last time?” — Phaust uses `Memory/session_state.json` and answers in **prose** (not raw episode lists). Use `phaust resume` before a session to see the pointer. Character sheets and campaigns belong in `characters/` or `campaigns/`, not `Memory/`.
+**Remembering conversations:** Ask “what were we discussing last time?” — Phaust uses `Memory/session_state.json` and answers in **prose** (not raw episode lists). Use `phaust resume` before a session to see the pointer. Long-form drafts and project notes belong under folders like `notes/` or `docs/`, not `Memory/`.
 
 ## Tools
 

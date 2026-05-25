@@ -129,20 +129,20 @@ Available: `read_file`, `list_directory`, `list_files`, `grep`, `create_file`, `
 
 ### Workspace layout (user artifacts)
 
-`Memory/` is **system-only** (SQLite, tasks, session pointer) — never create campaign sheets, characters, or notes there.
+`Memory/` is **system-only** (SQLite, tasks, session pointer) — never create user documents or notes there.
 
 Put durable user content under the project root, for example:
 
 | Path | Use |
 |------|-----|
-| `characters/` | RPG/Starfinder/Pathfinder character sheets (`.md`, `.txt`) |
-| `campaigns/` | Campaign pause notes, session summaries |
-| `notes/` | Career prep, drafts, misc |
+| `docs/` | Specifications, guides, reference material |
+| `notes/` | Drafts, meeting notes, work-in-progress text |
+| `projects/` | Multi-session work organized by folder |
 | Root | Small one-off files when no folder exists yet |
 
-When storing long narrative with `memorize`, topic tags are inferred (`starfinder`, `pathfinder`, `career`, `tabletop`, etc.) to improve `search_semantic`.
+When storing long narrative with `memorize`, topic tags are inferred from content (e.g. `project`, `docs`, `design`) to improve `search_semantic`.
 
-**Continue work:** user may run `phaust resume`, `/resume` in chat, or `phaust ask "pick up the Starfinder character"`.
+**Continue work:** user may run `phaust resume`, `/resume` in chat, or `phaust ask "continue where we left off"`.
 
 ### Write approval
 
