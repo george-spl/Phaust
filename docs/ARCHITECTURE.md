@@ -23,7 +23,11 @@ User message
        └────────┬────────┘                  │
                 ▼                           │
          ┌─────────────┐     tool results ──┘
-         │  agent.py   │  chat loop, tools, memory, LLM
+         │ turn_loop   │  chat turn loop, nudges, outcomes
+         └──────┬──────┘
+                │
+         ┌──────▼──────┐
+         │  agent.py   │  session, memory, tool registration
          └─────────────┘
 ```
 
@@ -73,15 +77,26 @@ Cross-session file recall (e.g. `stress_c1.txt`) uses **hybrid ranking**:
 
 Configure in `phaust.toml` `[memory]`: `hybrid_retrieval`, `filename_boost`, `lexical_weight`, `query_expansion`.
 
+## Turn loop (`phaust/turn_loop.py`)
+
+- One user message → LLM rounds, tool execution, nudges, terminal outcomes
+- `run_chat_turn(agent, message)` — called from REPL and tests via `agent.chat()`
+
 ## Turn runner (`phaust/turn_runner.py`)
 
 - Explain-mode **synthesis** (second LLM pass from read/grep grounding)
 - API message sanitization for LM Studio / Qwen
 - Optional **`[llm.synthesis]`** profile in `phaust.toml` (falls back to main `[llm]`)
 
-## Reply cleanup (`phaust/reply.py`)
+## Supporting modules
 
-- Strip thinking blocks and meta-narration preambles from user-facing text
+| Module | Role |
+|--------|------|
+| `prompt_context.py` | System prompt blocks (memory, task mode, directives) |
+| `tool_executor.py` | Tool calls with write/shell approval and read-before-write gate |
+| `reply.py` | Strip thinking blocks and meta-narration from replies |
+| `repl.py` | Interactive `You:` session and task REPL commands |
+| `tool_ui.py` | Terminal formatting for tool results |
 
 ## Tool recovery (`orchestration/policy.py`)
 
@@ -89,11 +104,9 @@ Configure in `phaust.toml` `[memory]`: `hybrid_retrieval`, `filename_boost`, `le
 
 ## What stays in `agent.py`
 
-- LLM request/response and tool-call parsing
-- Write/shell approval UX
-- Memory compaction and session lifecycle
-- Workspace path normalization and read-before-write gate
-- `chat()` loop wiring orchestration + turn_runner
+- `Agent` dataclass: memory, workspace, tools, config
+- Session lifecycle (`begin_session`, `finalize_session`, `_persist`)
+- `chat()` → delegates to `turn_loop.run_chat_turn`
 
 ## Adding a new behavior
 

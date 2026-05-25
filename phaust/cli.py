@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from phaust import __version__
-from phaust.agent import run
+from phaust.repl import run
 from phaust.app import build_agent
 from phaust.recap import build_recap
 

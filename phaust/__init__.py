@@ -1,6 +1,7 @@
 """Phaust-2 — local agent package."""
 
-from phaust.agent import Agent, run
+from phaust.agent import Agent
+from phaust.repl import run
 from phaust.app import build_agent
 
 __version__ = "2.0.0"

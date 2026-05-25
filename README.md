@@ -100,7 +100,12 @@ AGENTS.md            Project rules (loaded every session)
 phaust/
   cli.py             `phaust`, `phaust recap`
   app.py             build_agent(workspace)
-  agent.py           Chat loop, approvals, memory lifecycle
+  agent.py           Session, memory, tool registration
+  turn_loop.py       Chat turn loop (LLM + tools + nudges)
+  turn_runner.py     Explain-mode synthesis
+  tool_executor.py   Write/shell approval execution
+  prompt_context.py  System prompt assembly
+  repl.py            Interactive session loop
   turn_runner.py     Synthesis pass, API message sanitization
   reply.py           User-facing reply cleanup
   recap.py           `phaust recap` snapshot
@@ -174,7 +179,7 @@ Unit tests are lightweight `python -c` style (no pytest required). Stress/regres
 
 ## What's next
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) — memory CLI, NL → task decomposition, per-task model profiles, further `agent.py` slim-down.
+See [docs/ROADMAP.md](docs/ROADMAP.md) — memory CLI, NL → task decomposition, per-task model profiles, `phaust resume`.
 
 ## License
 

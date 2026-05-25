@@ -18,7 +18,8 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | `phaust/orchestration/` | **Done** |
 | `phaust/tasks/` | **Done** |
 | `phaust/memory/retrieval.py` | **Done** |
-| `agent.py` slim-down | **In progress** — synthesis in `turn_runner.py`; loop still in agent |
+| `turn_loop.py` + `tool_executor.py` | **Done** — chat loop extracted from `agent.py` |
+| `agent.py` slim-down | **Done** — session + registration only (~120 lines) |
 | Tool recovery nudge | **Done** — one retry hint per turn on recoverable errors |
 | Synthesis model profile | **Done** — optional `[llm.synthesis]` in `phaust.toml` |
 

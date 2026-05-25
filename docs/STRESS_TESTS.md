@@ -110,7 +110,7 @@ Log results in `test_logging.txt` at the project root. After each test (or batch
 |----|--------|----------|-----|
 | G1 | `remember nothing this session` | Memory-off notice; `exit` discards | |
 | G2 | New session: `enable remembering` | Re-enables if was off | |
-| G3 | `memorize: Phaust passed George's evaluation on 24-05-2026` | **`memorize` tool** called (not text-only) | |
+| G3 | `memorize: Phaust passed operator evaluation on 24-05-2026` | **`memorize` tool** called (not text-only) | |
 | G4 | `Do you remember what I memorized?` | `search_semantic` or honest check | |
 
 **Phaust self-opinion:** G1–G4
@@ -183,11 +183,11 @@ Append to test_logging.txt a section "Phaust overall opinion" with:
 - Strongest areas
 - Weakest areas
 - Tests that needed nudges or retries
-- What George should fix next in Phaust-2
+- What to fix next in Phaust-2
 Use edit_file to append (read_file first).
 ```
 
-You record **George's PASS/FAIL** in the log; Phaust records **his** opinion separately.
+You record **operator PASS/FAIL** in the log; Phaust records its opinion separately.
 
 ---
 
@@ -201,7 +201,7 @@ You record **George's PASS/FAIL** in the log; Phaust records **his** opinion sep
 
 ---
 
-## Quick score sheet (George)
+## Quick score sheet (operator)
 
 Copy into `test_logging.txt` as you go:
 

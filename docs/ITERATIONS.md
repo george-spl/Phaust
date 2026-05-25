@@ -25,7 +25,7 @@ Built on Phaust-1's safety model and tool set. New structure:
 | `phaust/tasks/` | Multi-step task mode, JSON checkpoints in `Memory/tasks/` |
 | `phaust/memory/retrieval.py` | Hybrid semantic search (filename boost, query expansion) |
 
-Same George, same workspace, same approval gates — cleaner internals and task/retrieval features.
+Same operator, same workspace, same approval gates — cleaner internals and task/retrieval features.
 
 **Install:** `pip install -e .` from the repo, then run `phaust` in any directory with `phaust.toml`.
 
