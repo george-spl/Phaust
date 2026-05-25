@@ -29,7 +29,7 @@ Built on Phaust-1's safety model and tool set. New structure:
 
 Same operator, same workspace, same approval gates — cleaner internals and task/retrieval features.
 
-**v2.1 (operator layer):** Session pointer (`session_state.json`), topic-tagged `memorize`, workspace layout rules (`characters/` not `Memory/`), prose-first answers for “what did we discuss last time”, tuned recall nudges.
+**v2.1 (operator layer):** Session pointer (`session_state.json`), topic-tagged `memorize`, workspace layout rules (user files not under `Memory/`), prose-first answers for “what did we discuss last time”, tuned recall nudges.
 
 **Install:** `pip install -e .` from the repo, then run `phaust` in any directory with `phaust.toml`.
 

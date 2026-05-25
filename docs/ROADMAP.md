@@ -37,7 +37,7 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | **Recap** | **Done** — `phaust recap` (tasks, facts, episodes, live context) |
 | **Resume / ask** | **Done** — `phaust resume`, `phaust ask`, `/resume` `/recap` in chat |
 | **Topic memory** | **Done** — auto tags on `memorize`, boost `search_semantic` by topic |
-| **Workspace rules** | **Done** — `AGENTS.md` layout (`characters/`, never `Memory/`) |
+| **Workspace rules** | **Done** — `AGENTS.md` layout (user docs in `docs/` / `notes/`, never `Memory/`) |
 
 ### Memory UX (v2.1 polish)
 
