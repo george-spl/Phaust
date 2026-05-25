@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from phaust.orchestration.constants import MEMORY_RECALL_TOOLS
+from phaust.orchestration.constants import MEMORY_LOOKUP_TOOLS, MEMORY_RECALL_TOOLS
 from phaust.orchestration.intent import TurnIntent
 from phaust.shell import SHELL_TOOL_NAMES
 from phaust.workspace_write import WRITE_TOOL_NAMES
@@ -123,16 +123,19 @@ def should_nudge_recall(
     )
 
 
-def should_return_recall_outcome(
+def should_auto_return_recall_outcome(
     tool_calls: list[dict[str, Any]],
     recall_reply: str | None,
     intent: TurnIntent,
 ) -> bool:
-    return bool(
-        recall_reply
-        and not intent.wants_write
-        and round_includes_tools(tool_calls, MEMORY_RECALL_TOOLS)
-    )
+    """Only dump tool output when the user asked for a lookup, not casual chat."""
+    if not recall_reply or intent.wants_write:
+        return False
+    if round_includes_tools(tool_calls, MEMORY_LOOKUP_TOOLS):
+        return True
+    if intent.fact_recall and round_includes_tools(tool_calls, frozenset({"recall"})):
+        return True
+    return False
 
 
 def is_recoverable_tool_error(result: dict[str, Any]) -> bool:

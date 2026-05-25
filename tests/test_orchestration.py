@@ -57,10 +57,23 @@ def test_stress_a3_still_recalls():
     assert intent.recall_past
 
 
-def test_search_semantic_not_direct_recall_tool():
-    from phaust.orchestration.constants import MEMORY_DIRECT_RECALL_TOOLS
+def test_conversational_recall_not_auto_returned():
+    from phaust.orchestration.policy import should_auto_return_recall_outcome
 
-    assert "search_semantic" not in MEMORY_DIRECT_RECALL_TOOLS
+    intent = classify_turn("Let's review my current responsibilities")
+    tool_calls = [{"function": {"name": "recall", "arguments": '{"key":"user_job"}'}}]
+    reply = "user_job = Warehouse Lead at Hyve Solutions"
+    assert not should_auto_return_recall_outcome(tool_calls, reply, intent)
+
+
+def test_explicit_fact_recall_auto_returned():
+    from phaust.orchestration.policy import should_auto_return_recall_outcome
+
+    intent = classify_turn("recall user_job")
+    tool_calls = [{"function": {"name": "recall", "arguments": '{"key":"user_job"}'}}]
+    assert should_auto_return_recall_outcome(
+        tool_calls, "user_job = Warehouse Lead", intent
+    )
 
 
 def test_format_write_applied():

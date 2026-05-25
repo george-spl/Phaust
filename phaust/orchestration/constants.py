@@ -10,10 +10,9 @@ MEMORY_RECALL_TOOLS = frozenset({
     "list_episodes",
     "list_memories",
 })
-# Auto-reply with tool output only for direct lookups — search_semantic goes back to the model
-MEMORY_DIRECT_RECALL_TOOLS = frozenset({
+# Tools that may bypass the model for the final reply (see should_auto_return_recall_outcome)
+MEMORY_LOOKUP_TOOLS = frozenset({
     "recall_episode",
-    "recall",
     "list_episodes",
     "list_memories",
 })
