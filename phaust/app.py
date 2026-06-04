@@ -65,6 +65,8 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
     agent.semantic.filename_boost = config.retrieval.filename_boost
     agent.semantic.lexical_weight = config.retrieval.lexical_weight
     agent.semantic.query_expansion = config.retrieval.query_expansion
+    if config.embedding_model:
+        agent.semantic.embedding_model = config.embedding_model
 
     @agent.context
     def time_context() -> str:

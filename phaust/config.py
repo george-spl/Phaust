@@ -49,6 +49,7 @@ class PhaustConfig:
     compact_batch: int = 10
     max_episodes: int = 500
     semantic_top_k: int = 5
+    embedding_model: str | None = None
     max_tool_rounds: int = 12
     max_write_proposals: int = 2
     require_write_approval: bool = True
@@ -135,6 +136,12 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
         compact_batch=int(memory.get("compact_batch", config.compact_batch)),
         max_episodes=int(memory.get("max_episodes", config.max_episodes)),
         semantic_top_k=int(memory.get("semantic_top_k", config.semantic_top_k)),
+        embedding_model=(
+            str(memory["embedding_model"]).strip()
+            if isinstance(memory.get("embedding_model"), str)
+            and str(memory["embedding_model"]).strip()
+            else config.embedding_model
+        ),
         max_tool_rounds=int(agent.get("max_tool_rounds", config.max_tool_rounds)),
         max_write_proposals=int(
             agent.get("max_write_proposals", config.max_write_proposals)

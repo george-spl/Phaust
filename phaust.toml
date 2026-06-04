@@ -9,7 +9,7 @@ model = "qwen/qwen3.5-9b"
 base_url = "http://127.0.0.1:1234/v1"
 api_key = "NO_API_KEY"
 temperature = 0.3
-max_tokens = 8192
+max_tokens = 2048
 
 # Optional: different model for explain-mode synthesis (read_file → answer).
 # Omit [llm.synthesis] to use the main model above.
@@ -23,6 +23,8 @@ max_tokens = 8192
 root = "."
 
 [memory]
+# Separate from [llm].model — load this embedding model in LM Studio (see README.md)
+embedding_model = "text-embedding-nomic-embed-text-v1.5"
 max_messages = 50
 compact_batch = 10
 max_episodes = 500

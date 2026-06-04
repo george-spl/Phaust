@@ -1,13 +1,18 @@
-# Phaust-1 comprehensive stress tests
+# Phaust-2 stress tests (manual)
 
-Log results in `test_logging.txt` at the project root. After each test (or batch), ask Phaust to append his own opinion to that file via `edit_file` or `memorize` + your notes.
+Manual QA matrix carried forward from Phaust-1 blocks **A–L**. There is no in-repo pytest or `scripts/` runner on this baseline — you run cases in **`phaust`** and log outcomes yourself.
+
+Log results in `test_logging.txt` at the project root. After each test (or batch), ask Phaust to append his opinion via `edit_file` (read the file first) or add operator notes.
 
 **Before each session**
 
-- LM Studio: Load **Qwen 3.5 9B**, context **32768**, thinking **OFF**
-- `phaust.toml`: `max_tokens = 2048` (or your chosen value)
-- Fresh `python main.py` start
-- You approve writes/shell at terminal with `y` / `N` as intended
+- LM Studio: load **both** models and keep the server running:
+  - **Chat:** `qwen/qwen3.5-9b` (match `[llm].model` in `phaust.toml`)
+  - **Embeddings:** `text-embedding-nomic-embed-text-v1.5` (match `[memory].embedding_model`)
+- Context **16384** on 12GB VRAM (**32768** only if stable); **thinking OFF** for Qwen
+- `phaust.toml`: `max_tokens = 2048` recommended for chat
+- Start: `phaust` from repo root (or `python main.py`)
+- Approve writes/shell at the terminal with `y` / `N`
 
 **Pass criteria legend**
 

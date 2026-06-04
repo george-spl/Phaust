@@ -4,8 +4,7 @@
 
 - Local console agent, SQLite memory, workspace read/write with approval
 - Grounded answers after `read_file` (explain mode)
-- Write path: intent detection, single nudge, XML tool-call parsing, clean post-write replies
-- Regression block R1–R7: **6 PASS, 1 PARTIAL** (R4 semantic search at tag time; R4 later **PASS** in Phaust-2)
+- Stress blocks A–L; regression R1–R7: **6 PASS, 1 PARTIAL** (R4 semantic search; later **PASS** in Phaust-2)
 
 ## Phaust-2 (current on `experimental`)
 
@@ -18,35 +17,43 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | `phaust/orchestration/` | **Done** |
 | `phaust/tasks/` | **Done** |
 | `phaust/memory/retrieval.py` | **Done** |
-| `turn_loop.py` + `tool_executor.py` | **Done** — chat loop extracted from `agent.py` |
-| `agent.py` slim-down | **Done** — session + registration only (~120 lines) |
-| Tool recovery nudge | **Done** — one retry hint per turn on recoverable errors |
-| Synthesis model profile | **Done** — optional `[llm.synthesis]` in `phaust.toml` |
+| `turn_loop.py` + `tool_executor.py` | **Done** |
+| `agent.py` slim-down | **Done** |
+| Tool recovery nudge | **Done** |
+| `[llm.synthesis]` profile | **Done** (optional in `phaust.toml`) |
 
 ### Features
 
 | Area | Status |
 |------|--------|
 | **Config** | Done — `phaust.toml` iteration 2 |
-| **Rules** | Done — `AGENTS.md` identity + iteration history |
-| **Shell** | Done |
-| **Tasks** | Done — multi-step mode, checkpoints, REPL commands |
-| **Memory** | Done — hybrid retrieval, full search_semantic output |
-| **Models** | Partial — `[llm.synthesis]` profile; per-task profiles still planned |
-| **Packaging** | **Done** — `pip install -e .` and `phaust` CLI |
-| **Recap** | **Done** — `phaust recap` (tasks, facts, episodes, live context) |
-| **Resume / ask** | **Done** — `phaust resume`, `phaust ask`, `/resume` `/recap` in chat |
-| **Topic memory** | **Done** — auto tags on `memorize`, boost `search_semantic` by topic |
-| **Workspace rules** | **Done** — `AGENTS.md` layout (user docs in `docs/` / `notes/`, never `Memory/`) |
+| **Rules** | Done — `AGENTS.md` |
+| **Shell** | Done — allowlist + approval |
+| **Tasks** | Done |
+| **Memory** | Done — hybrid retrieval, episodes, facts |
+| **Embeddings config** | **Done** — `[memory].embedding_model` → nomic (or other) in LM Studio |
+| **Chat model** | Operator choice — currently **Qwen3.5-9B** in docs/`phaust.toml` |
+| **Packaging** | Done — `pip install -e .`, `phaust` CLI |
+| **Recap / resume / ask** | Done |
+| **Topic memory** | Done |
+| **Workspace rules** | Done — user files in `docs/` / `notes/`, not `Memory/` |
 
-### Memory UX (v2.1 polish)
+### Memory UX (v2.1)
 
 | Area | Status |
 |------|--------|
-| Prose memory answers | **Done** — no raw tool dumps for conversational recall |
-| `continue_from` + session pointer | **Done** — `session_state.json` biases “last time” toward latest topic |
-| Recall nudge tuning | **Done** — no nudge when pointer exists; feedback lines not treated as lookups |
-| Intent fixes | **Done** — “make you smarter” ≠ write; narrative “last session” ≠ stress recall |
+| Prose memory answers | **Done** |
+| `continue_from` + session pointer | **Done** |
+| Recall nudge tuning | **Done** |
+| Intent fixes (write vs chat vs stress) | **Done** |
+
+### Testing
+
+| Area | Status |
+|------|--------|
+| Manual stress matrix | **Active** — [STRESS_TESTS.md](STRESS_TESTS.md), `test_logging.txt` |
+| `tests/` import modules | Optional lightweight checks (no pytest CI) |
+| Automated harness / pytest suite | Not on current baseline |
 
 ### Next (v2.2)
 
@@ -54,5 +61,6 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 - Parallel tool reads in one turn
 - Per-task / chat model profiles beyond `[llm.synthesis]`
 - Memory CLI (`phaust memory search`, …)
+- Stronger chat persona in `prompts.py` (optional; rules remain in `AGENTS.md`)
 
 Contributions welcome on branch `experimental`.
