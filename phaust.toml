@@ -5,24 +5,28 @@ name = "Phaust-2"
 iteration = 2
 
 [llm]
-model = "qwen/qwen3.5-9b"
+# Load Qwen3-14B Q4_K_M in LM Studio; model id must match Developer tab / GET /v1/models
+# LM Studio context length: 32768 recommended (see docs/STRESS_TESTS.md)
+model = "qwen/qwen3-14b"
 base_url = "http://127.0.0.1:1234/v1"
 api_key = "NO_API_KEY"
-temperature = 0.3
-max_tokens = 8192
+# Tool/chat turns: lower temp = steadier tool calls; cap output for 32k context headroom
+temperature = 0.25
+max_tokens = 2048
 
-# Optional: different model for explain-mode synthesis (read_file → answer).
-# Omit [llm.synthesis] to use the main model above.
-# [llm.synthesis]
-# model = "qwen/qwen3.5-9b"
-# temperature = 0.2
-# max_tokens = 1024
+# Explain-mode synthesis (read_file → grounded answer). Same model; tighter sampling.
+[llm.synthesis]
+model = "qwen/qwen3-14b"
+temperature = 0.15
+max_tokens = 2048
 
 [workspace]
 # Relative to this file's directory (project root)
 root = "."
 
 [memory]
+# LM Studio: load an embedding model (not the chat model) for semantic search quality
+embedding_model = "text-embedding-nomic-embed-text-v1.5"
 max_messages = 50
 compact_batch = 10
 max_episodes = 500
@@ -37,6 +41,10 @@ agents_md = "AGENTS.md"
 max_tool_rounds = 12
 max_write_proposals = 2
 require_write_approval = true
+# Natural chat: answer from injected memory first; warmer sampling; quieter memory tool traces
+conversational_first = true
+chat_temperature = 0.35
+quiet_memory_tools = true
 
 [tasks]
 enabled = true
@@ -50,7 +58,6 @@ timeout_seconds = 120
 max_output_bytes = 65536
 allow = [
   "python --version",
-  "python -m pytest",
   "python -m pip list",
   "python -m pip show",
   "python -m py_compile",

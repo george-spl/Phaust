@@ -64,6 +64,14 @@ class ContextMemory:
         msgs = self.db.get_messages()
         return [{k: v for k, v in m.items() if k != "_id"} for m in msgs]
 
+    def messages_for_api(self) -> list[dict[str, Any]]:
+        """Chat history sent to the LLM — only this REPL session when marked."""
+        raw = self.db.get_messages()
+        start = self._session_start_message_id
+        if isinstance(start, int):
+            raw = [m for m in raw if int(m.get("_id") or 0) >= start]
+        return [{k: v for k, v in m.items() if k != "_id"} for m in raw]
+
     @property
     def session(self) -> dict[str, Any]:
         return self.db.all_session()

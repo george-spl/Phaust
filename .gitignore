@@ -7,7 +7,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
@@ -20,10 +19,11 @@ Memory/voices/
 Memory/*.json
 Memory/session_state.json
 *.db.bak
-stress_test.txt
+stress_c1.txt
+stress_h1.txt
+*_scratch.txt
 *.onnx
 *.onnx.json
-android_sniper_character.txt
 
 # IDE / OS
 .cursor/

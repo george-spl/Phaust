@@ -22,6 +22,25 @@ def strip_meta_preamble(text: str) -> str:
     return "\n\n".join(paragraphs) if paragraphs else text
 
 
+def is_planning_monologue(text: str) -> bool:
+    """Model narrates steps instead of acting (common on logging/edit turns)."""
+    t = text.strip()
+    if len(t) < 400:
+        return False
+    lower = t.lower()
+    markers = (
+        "let's see",
+        "let me recheck",
+        "first, i need",
+        "wait,",
+        "so first",
+        "the user wants me to",
+        "i need to check",
+    )
+    hits = sum(1 for m in markers if m in lower)
+    return hits >= 2 or (hits >= 1 and len(t) > 1200)
+
+
 def is_meta_narration(text: str) -> bool:
     t = text.strip()
     if not t:

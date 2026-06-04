@@ -41,7 +41,7 @@ def _format_messages_for_prompt(messages: list[dict[str, Any]]) -> str:
 class Compactor:
     base_url: str = "http://127.0.0.1:1234/v1"
     api_key: str = "NO_API_KEY"
-    model: str = "qwen/qwen3.5-9b"
+    model: str = "qwen/qwen3-14b"
     timeout: int = 120
 
     def compact(

@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from phaust.orchestration import build_turn_directives, classify_turn
+from phaust.prompts import CAPABILITIES_BLOCK
+from phaust.orchestration.stress_log import build_session_transcript_block
 from phaust.tasks import build_task_directive
 from phaust.tasks.models import TaskStatus
 
@@ -29,7 +31,7 @@ def build_system_messages(
     file_snapshots: dict[str, str] | None = None,
 ) -> list[dict[str, str]]:
     intent = classify_turn(user_message)
-    blocks = [agent.system_prompt]
+    blocks = [agent.system_prompt, CAPABILITIES_BLOCK]
 
     context_block = agent.context_memory.build_prompt_block()  # type: ignore
     if context_block:
@@ -55,11 +57,23 @@ def build_system_messages(
         if semantic_block:
             blocks.append(semantic_block)
 
+    if intent.logging_task and agent.context_memory:
+        transcript = build_session_transcript_block(
+            agent.context_memory.messages  # type: ignore — full log for stress assessment
+        )
+        if transcript:
+            blocks.append(transcript)
+
+    workspace = (agent.workspace_rules or "").strip()
+    if workspace:
+        blocks.append(f"## Workspace rules\n\n{workspace}")
+
     blocks.extend(
         build_turn_directives(
             intent,
             session_has_prior_reply=session_has_prior_assistant_reply(agent),
             memory_writes_enabled=agent.context_memory.memory_writes_enabled(),  # type: ignore
+            conversational_first=getattr(agent, "conversational_first", True),
             empty_write_paths=empty_write_paths,
             file_snapshots=file_snapshots,
         )

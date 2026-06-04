@@ -10,7 +10,7 @@ A local, private AI agent that runs in your terminal. It uses a local LLM (via [
 
 - Python 3.11+
 - A local LLM server at `http://127.0.0.1:1234` (default LM Studio port)
-- A chat model loaded in the server (default: `qwen/qwen3.5-9b`)
+- A chat model loaded in the server (default: **Qwen3-14B Q4_K_M** as `qwen/qwen3-14b` in LM Studio)
 
 ## Setup
 
@@ -131,18 +131,22 @@ Edit **`phaust.toml`** in the project root. Override path with env `PHAUST_CONFI
 | Section | Keys |
 |---------|------|
 | `[phaust]` | `name`, `iteration` |
-| `[llm]` | `model`, `base_url`, `api_key`, `temperature`, `max_tokens` |
-| `[llm.synthesis]` | Optional — explain-mode second pass (defaults to `[llm]`) |
+| `[llm]` | `model`, `base_url`, `api_key`, `temperature`, `max_tokens` (defaults tuned for Qwen3-14B: `0.25`, `2048`) |
+| `[llm.synthesis]` | Explain-mode second pass (`0.15`, `2048`; same model by default) |
 | `[workspace]` | `root` |
-| `[memory]` | `max_messages`, `compact_batch`, `max_episodes`, `semantic_top_k`, hybrid retrieval |
-| `[agent]` | `agents_md`, `max_tool_rounds`, `max_write_proposals`, `require_write_approval` |
+| `[memory]` | `embedding_model` (load in LM Studio for search), `max_messages`, `compact_batch`, `max_episodes`, `semantic_top_k`, hybrid retrieval |
+| `[agent]` | `agents_md`, `conversational_first`, `chat_temperature`, `quiet_memory_tools`, `max_tool_rounds`, `max_write_proposals`, `require_write_approval` |
 | `[tasks]` | `enabled`, `storage_dir`, `auto_checkpoint` |
 | `[shell]` | `enabled`, `require_approval`, `allow`, … |
 
-**Project rules:** [`AGENTS.md`](AGENTS.md) — identity, tool policy, shipped vs planned capabilities.
+**Persona + rules:** Core system prompt in `phaust/prompts.py` (George's assistant); workspace tools and policies in [`AGENTS.md`](AGENTS.md). Chat tuning: `[agent]` in `phaust.toml`.
 
 ## LM Studio tips
 
+- Load **Qwen3-14B** with **Q4_K_M** quantization; set context length to **32768** in LM Studio.
+- Set `[llm].model` to the id from the Developer tab (usually `qwen/qwen3-14b`; some builds use `qwen/qwen3-14b@q4_k_m`).
+- Verify with `curl http://127.0.0.1:1234/v1/models` if chat requests fail with “model not found”.
+- Default `phaust.toml` uses `temperature = 0.25`, `max_tokens = 2048` for chat/tools and a synthesis profile at `0.15` / `2048` for explain-mode.
 - Disable **Enable Thinking** for Qwen 3.x if replies are empty or show long traces.
 - Keep a **chat model loaded** for the whole session.
 - Do not press **Enter** on an empty `You:` prompt (`400: No user query found`).
@@ -177,13 +181,9 @@ SELECT key, value FROM facts;
 SELECT substr(text, 1, 100), created_at FROM episodes ORDER BY created_at DESC LIMIT 5;
 ```
 
-## Testing
+## Testing (manual)
 
-```powershell
-python -c "import tests.test_orchestration, tests.test_turn_runner, tests.test_recap, tests.test_tasks"
-```
-
-Unit tests are lightweight `python -c` style (no pytest required). Stress/regression notes: [`docs/STRESS_TESTS.md`](docs/STRESS_TESTS.md), log: `test_logging.txt`.
+Run cases from [`docs/STRESS_TESTS.md`](docs/STRESS_TESTS.md) in `phaust`; log results in `test_logging.txt`.
 
 ## What's next
 

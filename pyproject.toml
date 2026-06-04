@@ -18,7 +18,7 @@ dependencies = [
 phaust = "phaust.cli:main"
 
 [project.urls]
-Repository = "https://github.com/george-spl/Phaust-1"
+Repository = "https://github.com/george-spl/Phaust-2"
 
 [tool.setuptools.packages.find]
 where = ["."]

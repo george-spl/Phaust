@@ -61,8 +61,8 @@ def synthesize_from_sources(
     model: str,
     base_url: str,
     api_key: str,
-    temperature: float = 0.2,
-    max_tokens: int = 1024,
+    temperature: float = 0.15,
+    max_tokens: int = 2048,
 ) -> str:
     """Second pass: answer only from file text (no tools — reduces hallucination)."""
     sources = truncate_sources(sources)

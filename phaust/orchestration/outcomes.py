@@ -22,6 +22,45 @@ def _format_semantic_search_hit(hit: dict[str, Any]) -> str:
     return f"### ({score}) {eid}{hint_note}\n{text}"
 
 
+_FACT_LABELS = {
+    "user_name": "Name",
+    "user_age": "Age",
+    "user_job": "Job",
+    "user_goal": "Goal",
+}
+_FACT_ORDER = ("user_name", "user_age", "user_job", "user_goal")
+
+
+def _sorted_fact_keys(facts: dict[str, dict[str, Any]]) -> list[str]:
+    return sorted(
+        facts.keys(),
+        key=lambda k: (_FACT_ORDER.index(k), k)
+        if k in _FACT_ORDER
+        else (len(_FACT_ORDER), k),
+    )
+
+
+def format_profile_facts_reply(facts: dict[str, dict[str, Any]]) -> str | None:
+    """User-facing summary of all long-term facts (keys may use user_* prefix)."""
+    if not facts:
+        return (
+            "I don't have any personal facts stored about you yet — "
+            "tell me what you'd like me to remember."
+        )
+    parts: list[str] = []
+    for key in _sorted_fact_keys(facts):
+        label = _FACT_LABELS.get(key, key.replace("user_", "").replace("_", " ").title())
+        value = str(facts[key].get("value") or "").strip()
+        if value:
+            parts.append(f"{label}: {value}")
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return f"Here's what I have stored about you: {parts[0]}."
+    body = "; ".join(parts[:-1]) + f"; and {parts[-1]}."
+    return f"Here's what I have stored about you: {body}"
+
+
 def format_memory_recall_outcome(results: list[dict[str, Any]]) -> str | None:
     lines: list[str] = []
     for result in results:
