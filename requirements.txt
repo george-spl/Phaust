@@ -1,2 +1,1 @@
-# Prefer: pip install -e .  (see pyproject.toml)
 requests>=2.31.0

@@ -8,18 +8,7 @@ from phaust.shell import print_command_result
 from phaust.workspace_write import WRITE_TOOL_NAMES
 
 
-_MEMORY_TOOLS = frozenset(
-    {"recall", "remember", "memorize", "search_semantic", "recall_episode", "list_episodes", "list_memories"}
-)
-
-
-def print_tool_result(
-    name: str | None, result: dict[str, Any], *, quiet: bool = False
-) -> None:
-    if quiet and name in _MEMORY_TOOLS:
-        if result.get("error"):
-            print(f"     ✗ {result['error']}")
-        return
+def print_tool_result(name: str | None, result: dict[str, Any]) -> None:
     if result.get("skipped"):
         print(f"     ○ {name}: {result.get('reason', 'skipped')}")
         return

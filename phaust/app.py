@@ -28,13 +28,12 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
     ws_root = config.workspace_root or project_root
 
     instructions, agents_path = load_agents_instructions(ws_root, config.agents_md)
-    system_prompt, workspace_rules = build_system_prompt(instructions)
+    system_prompt = build_system_prompt(config.name, instructions)
 
     workspace = Workspace(ws_root)
     agent = Agent(
         workspace=workspace,
         system_prompt=system_prompt,
-        workspace_rules=workspace_rules,
         model=config.model,
         base_url=config.base_url,
         api_key=config.api_key,
@@ -47,9 +46,6 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
         max_tool_rounds=config.max_tool_rounds,
         max_write_proposals=config.max_write_proposals,
         require_write_approval=config.require_write_approval,
-        conversational_first=config.conversational_first,
-        chat_temperature=config.chat_temperature,
-        quiet_memory_tools=config.quiet_memory_tools,
         shell_config=config.shell,  # type: ignore
         synthesis=config.synthesis,
     )
@@ -69,8 +65,6 @@ def build_agent(workspace_root: Path | None = None) -> Agent:
     agent.semantic.filename_boost = config.retrieval.filename_boost
     agent.semantic.lexical_weight = config.retrieval.lexical_weight
     agent.semantic.query_expansion = config.retrieval.query_expansion
-    if config.embedding_model:
-        agent.semantic.embedding_model = config.embedding_model
 
     @agent.context
     def time_context() -> str:

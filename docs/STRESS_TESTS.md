@@ -1,13 +1,13 @@
-# Phaust-2 stress tests (manual)
+# Phaust-1 comprehensive stress tests
 
-Run each case in `phaust` or `phaust ask`. You approve writes/shell with `y` / `N` and record outcomes in `test_logging.txt`.
+Log results in `test_logging.txt` at the project root. After each test (or batch), ask Phaust to append his own opinion to that file via `edit_file` or `memorize` + your notes.
 
 **Before each session**
 
-- LM Studio: **Qwen3-14B Q4_K_M** (`qwen/qwen3-14b`), context **32768**, thinking **OFF**
-- `phaust.toml`: `max_tokens = 2048` (or your value); `[agent]` `conversational_first`, `chat_temperature`, `quiet_memory_tools` as you prefer
-- Start: `phaust` (or `python main.py` from repo root)
-- Approve file/shell previews at the terminal as intended
+- LM Studio: Load **Qwen 3.5 9B**, context **32768**, thinking **OFF**
+- `phaust.toml`: `max_tokens = 2048` (or your chosen value)
+- Fresh `python main.py` start
+- You approve writes/shell at terminal with `y` / `N` as intended
 
 **Pass criteria legend**
 

@@ -25,14 +25,11 @@ from phaust.orchestration import (
     should_skip_synthesis,
     snapshots_from_results,
 )
-from phaust.orchestration.outcomes import format_profile_facts_reply
-from phaust.orchestration.stress_log import extract_test_ids
 from phaust.orchestration.constants import MEMORY_RECALL_TOOLS
 from phaust.orchestration.policy import (
     build_tool_recovery_nudge,
     should_auto_return_recall_outcome,
     should_nudge_logging,
-    should_nudge_logging_edit,
     should_nudge_memorize,
     should_nudge_recall,
     should_nudge_shell_staging,
@@ -40,22 +37,18 @@ from phaust.orchestration.policy import (
     should_nudge_write,
 )
 from phaust.orchestration.nudges import (
-    LOGGING_EDIT_NUDGE,
     LOGGING_NUDGE,
     META_NARRATION_NUDGE,
-    NATIVE_TOOL_NUDGE,
     SHELL_STAGING_NUDGE,
     memorize_nudge_message,
     recall_nudge_message,
     write_nudge_message,
 )
 from phaust.prompt_context import build_system_messages
-from phaust.errors import format_user_error
-from phaust.reply import clean_reply, is_meta_narration, is_planning_monologue, message_text
-from phaust.tool_labels import label_for_tool
+from phaust.reply import is_meta_narration, message_text
 from phaust.shell import SHELL_TOOL_NAMES
 from phaust.tool_executor import execute_tool_call, slim_tool_result
-from phaust.tool_parse import parse_text_tool_calls, reply_simulates_tools
+from phaust.tool_parse import parse_text_tool_calls
 from phaust.tool_ui import print_tool_result
 from phaust.turn_runner import (
     grounding_from_tool_results,
@@ -104,16 +97,7 @@ class TurnState:
 
     @property
     def wants_memorize(self) -> bool:
-        return self.intent.memorize or self.intent.store_fact
-
-
-def _only_single_recall_tool(tool_calls: list[dict[str, Any]]) -> bool:
-    names = [
-        (call.get("function") or {}).get("name")
-        for call in tool_calls
-        if (call.get("function") or {}).get("name")
-    ]
-    return names == ["recall"]
+        return self.intent.memorize
 
 
 def _last_user_message(agent: Agent) -> str:
@@ -136,21 +120,15 @@ def _synthesis_llm(agent: Agent) -> tuple[str, str, str, float, int]:
 
 def _api_messages(agent: Agent, prefix: list[dict[str, str]]) -> list[dict[str, Any]]:
     return sanitize_messages_for_api(
-        list(prefix) + list(agent.context_memory.messages_for_api())  # type: ignore
+        list(prefix) + list(agent.context_memory.messages)  # type: ignore
     )
-
-
-def _chat_temperature(agent: Agent) -> float:
-    if agent.chat_temperature is not None:
-        return agent.chat_temperature
-    return agent.temperature
 
 
 def _request_llm(agent: Agent, prefix: list[dict[str, str]]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": agent.model,
         "messages": _api_messages(agent, prefix),
-        "temperature": _chat_temperature(agent),
+        "temperature": agent.temperature,
         "max_tokens": agent.max_tokens,
         "extra_body": llm_extra(),
     }
@@ -175,7 +153,7 @@ def _request_llm(agent: Agent, prefix: list[dict[str, str]]) -> dict[str, Any]:
             agent.context_memory.db.pop_last_message()  # type: ignore
             raise requests.HTTPError(
                 f"{exc}\n"
-                "  -> Repaired context and rolled back this message. "
+                "  → Repaired context and rolled back this message. "
                 "Try again (do not press Enter on an empty prompt).",
                 response=getattr(exc, "response", None),
             ) from exc
@@ -208,10 +186,9 @@ def _memorize_blocked_reply(agent: Agent) -> str:
 
 
 def _finish_turn(agent: Agent, reply: str) -> str:
-    reply = clean_reply(reply)
     agent.context_memory.append_message({"role": "assistant", "content": reply})  # type: ignore
     agent._persist()
-    return clean_reply(reply)
+    return reply
 
 
 def _nudge_user(agent: Agent, content: str) -> None:
@@ -224,7 +201,7 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
         state.intent, memory_stored=state.memory_stored, budget=state.nudge_budget
     ):
         state.nudge_budget.memorize += 1
-        print("  -> memorize pending — nudging model…")
+        print("  → memorize pending — nudging model…")
         _nudge_user(
             agent,
             memorize_nudge_message(
@@ -234,20 +211,8 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
         )
         return None
 
-    if should_nudge_logging_edit(
-        state.intent,
-        read_paths=state.read_paths,
-        write_applied=state.write_applied,
-        budget=state.nudge_budget,
-    ):
-        state.nudge_budget.logging += 1
-        print("  -> logging edit — nudging model…")
-        _nudge_user(agent, LOGGING_EDIT_NUDGE)
-        return None
-
     if should_nudge_write(
         state.intent,
-        read_paths=state.read_paths,
         write_applied=state.write_applied,
         write_declined=state.write_declined,
         write_policy_blocked=state.write_policy_blocked,
@@ -261,7 +226,7 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
             if not state.read_paths
             else "write pending — nudging model…"
         )
-        print(f"  -> {label}")
+        print(f"  → {label}")
         _nudge_user(
             agent,
             write_nudge_message(state.read_paths, create_ok=state.wants_create),
@@ -279,21 +244,14 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
         budget=state.nudge_budget,
     ):
         state.nudge_budget.shell_staging += 1
-        print("  -> shell pending — nudging model…")
+        print("  → shell pending — nudging model…")
         _nudge_user(agent, SHELL_STAGING_NUDGE)
         return None
 
-    if should_nudge_logging(state.intent, reply, state.nudge_budget) or (
-        state.intent.logging_task
-        and is_planning_monologue(reply)
-        and state.nudge_budget.logging < 2
-    ):
+    if should_nudge_logging(state.intent, reply, state.nudge_budget):
         state.nudge_budget.logging += 1
-        print("  -> logging append — nudging model…")
-        _nudge_user(
-            agent,
-            LOGGING_EDIT_NUDGE if state.read_paths else LOGGING_NUDGE,
-        )
+        print("  → logging append — nudging model…")
+        _nudge_user(agent, LOGGING_NUDGE)
         return None
 
     session_snapshot = None
@@ -309,7 +267,7 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
         session_state=session_snapshot,
     ):
         state.nudge_budget.recall += 1
-        print("  -> recall pending — nudging model…")
+        print("  → recall pending — nudging model…")
         _nudge_user(
             agent,
             recall_nudge_message(
@@ -324,17 +282,10 @@ def _handle_no_tool_calls(agent: Agent, state: TurnState, msg: dict[str, Any]) -
         is_meta_narration(reply)
         and state.nudge_budget.meta < 1
         and not state.memory_recall_this_turn
-        and not state.intent.logging_task
     ):
         state.nudge_budget.meta += 1
-        print("  -> meta narration — nudging model…")
+        print("  → meta narration — nudging model…")
         _nudge_user(agent, META_NARRATION_NUDGE)
-        return None
-
-    if reply_simulates_tools(reply) and state.nudge_budget.tool_recovery < 1:
-        state.nudge_budget.tool_recovery += 1
-        print("  -> simulated tools in chat — nudging native calls…")
-        _nudge_user(agent, NATIVE_TOOL_NUDGE)
         return None
 
     agent._persist()
@@ -363,7 +314,7 @@ def _run_tool_round(
             and state.write_proposals >= agent.max_write_proposals
         ):
             continue
-        print(f"  -> {label_for_tool(name)}…")
+        print(f"  → {name}({fn.get('arguments', '')})")
         result = execute_tool_call(agent, call, state.files_read_this_turn)
         round_results.append(result)
         if name == "read_file" and not result.get("error"):
@@ -396,7 +347,7 @@ def _run_tool_round(
             state.memory_stored = True
         if name == "remember" and result.get("saved"):
             state.memory_stored = True
-        print_tool_result(name, result, quiet=agent.quiet_memory_tools)
+        print_tool_result(name, result)
         agent.context_memory.append_message(  # type: ignore
             {
                 "role": "tool",
@@ -418,15 +369,6 @@ def _run_tool_round(
 
     if state.write_policy_blocked and not state.write_applied and not state.write_declined:
         return _finish_turn(agent, format_write_policy_outcome(round_results))
-
-    if state.intent.profile_question and agent.long_term and _only_single_recall_tool(
-        tool_calls
-    ):
-        facts = agent.long_term.db.list_facts()  # type: ignore[union-attr]
-        if len(facts) > 1:
-            profile_reply = format_profile_facts_reply(facts)
-            if profile_reply:
-                return _finish_turn(agent, profile_reply)
 
     recall_reply = format_memory_recall_outcome(round_results)
     if should_auto_return_recall_outcome(tool_calls, recall_reply, state.intent):
@@ -466,13 +408,13 @@ def _run_tool_round(
     if should_nudge_tool_recovery(round_results, state.nudge_budget):
         state.nudge_budget.tool_recovery += 1
         recovery = build_tool_recovery_nudge(round_results)
-        print("  -> tool error — recovery nudge…")
+        print("  → tool error — recovery nudge…")
         _nudge_user(agent, recovery or "")
         return None
 
     sources = grounding_from_tool_results(round_results)
     if sources and not should_skip_synthesis(state.intent, tool_calls):
-        print("  -> synthesizing answer from file contents…")
+        print("  → synthesizing answer from file contents…")
         synth_model, synth_url, synth_key, synth_temp, synth_max = _synthesis_llm(agent)
         answer = synthesize_from_sources(
             question=_last_user_message(agent),
@@ -523,17 +465,6 @@ def _persist_session_pointer(agent: Agent, state: TurnState, reply: str) -> None
 
 def run_chat_turn(agent: Agent, user_message: str) -> str:
     """Run one user message through the tool loop; return the assistant reply."""
-    try:
-        return _run_chat_turn_inner(agent, user_message)
-    except Exception as exc:
-        try:
-            agent.context_memory.db.pop_last_message()  # type: ignore
-        except Exception:
-            pass
-        return format_user_error(exc)
-
-
-def _run_chat_turn_inner(agent: Agent, user_message: str) -> str:
     _apply_session_memory_policy(agent, user_message)
     agent.context_memory.append_message({"role": "user", "content": user_message})  # type: ignore
 
@@ -542,35 +473,14 @@ def _run_chat_turn_inner(agent: Agent, user_message: str) -> str:
         intent=classify_turn(user_message),
     )
 
-    if state.intent.logging_task:
-        ids = extract_test_ids(user_message)
-        if ids:
-            agent.context_memory.set_session("_stress_log_expected_ids", ids)  # type: ignore
-
     if state.wants_memorize and not agent.context_memory.memory_writes_enabled():  # type: ignore
         reply = _memorize_blocked_reply(agent)
         _persist_session_pointer(agent, state, reply)
         return reply
 
     def _return(reply: str) -> str:
-        reply = clean_reply(reply)
         _persist_session_pointer(agent, state, reply)
         return reply
-
-    if (
-        agent.conversational_first
-        and state.intent.profile_question
-        and agent.long_term
-    ):
-        facts = agent.long_term.db.list_facts()  # type: ignore[union-attr]
-        if facts:
-            profile_reply = format_profile_facts_reply(facts)
-            if profile_reply:
-                agent.context_memory.append_message(  # type: ignore
-                    {"role": "assistant", "content": profile_reply}
-                )
-                agent._persist()
-                return _return(profile_reply)
 
     while True:
         prefix = build_system_messages(
@@ -585,7 +495,7 @@ def _run_chat_turn_inner(agent: Agent, user_message: str) -> str:
             parsed = parse_text_tool_calls(str(msg.get("content") or ""))
             if parsed:
                 tool_calls = parsed
-                print(f"  -> parsed {len(tool_calls)} tool call(s) from assistant text")
+                print(f"  → parsed {len(tool_calls)} tool call(s) from assistant text")
 
         agent.context_memory.append_message(  # type: ignore
             {
@@ -609,5 +519,3 @@ def _run_chat_turn_inner(agent: Agent, user_message: str) -> str:
         done = _run_tool_round(agent, state, tool_calls)
         if done is not None:
             return _return(done)
-
-    return _return("(no response — try again)")

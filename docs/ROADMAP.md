@@ -48,14 +48,6 @@ Graduated from Phaust-1 on 2026-05-24. See [ITERATIONS.md](ITERATIONS.md).
 | Recall nudge tuning | **Done** — no nudge when pointer exists; feedback lines not treated as lookups |
 | Intent fixes | **Done** — “make you smarter” ≠ write; narrative “last session” ≠ stress recall |
 
-### Manual QA
-
-| Area | Status |
-|------|--------|
-| Stress matrix | [STRESS_TESTS.md](STRESS_TESTS.md) + `test_logging.txt` |
-| Conversational-first / `chat_temperature` / `quiet_memory_tools` | **Done** — `[agent]` in `phaust.toml` |
-| Profile fast-path (all facts, no tool round) | **Done** |
-
 ### Next (v2.2)
 
 - MCP plugin slot in `phaust.toml`

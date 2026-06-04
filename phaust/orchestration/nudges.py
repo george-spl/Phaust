@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from phaust.orchestration.stress_log import FORBIDDEN_GENERIC_LOG
-
 LOGGING_REFUSAL_PHRASES = (
     "cannot append",
     "can't append",
@@ -14,45 +12,33 @@ LOGGING_REFUSAL_PHRASES = (
 )
 
 LOGGING_NUDGE = (
-    "Update test_logging.txt from this session. Read the file, then append only new lines. "
-    "Per-test format: `A1: PASS — what George asked and what you did.` "
-    "No generic CPU/memory/latency fiction. Do not refuse."
-)
-
-LOGGING_EDIT_NUDGE = (
-    "Apply the file change now — append only the new section to test_logging.txt, "
-    "not the whole file again. Use the session transcript for real test results."
+    "Append to the log file now with read_file then edit_file. "
+    "Self-assessment lines must describe stress-test IDs from THIS session "
+    "(e.g. G1: memory disable, I2: .git/config block) — NOT the logging edit. "
+    "Use one sentence per test ID. Do not refuse."
 )
 
 SHELL_STAGING_NUDGE = (
-    "Try to stage the git changes with the allowed command. "
-    "If policy blocks it, tell George plainly — do not send him to an external terminal."
+    "Call run_command with `git add .` now (native function call). "
+    "If blocked, report the allowlist error — do not read phaust.toml or "
+    "suggest manual terminal commands."
 )
 
 MEMORIZE_NUDGE = (
-    "Save what George asked you to remember (fact or note). "
-    "Do not only say you saved it — actually store it."
+    "Call memorize or remember now (native function call — not text only). "
+    "For a note/snippet use memorize(text=...). For one fact use remember(key=..., value=...)."
 )
 
 META_NARRATION_NUDGE = (
-    "Answer George directly in second person. "
-    "Do not narrate what 'the user' is asking — give your actual answer."
-)
-
-NATIVE_TOOL_NUDGE = (
-    "Perform the action using the system's tools, not simulated code in chat. "
-    "Do not say you lack access — read, save, or run what is needed."
+    "Respond to the user directly in second person. "
+    "Do not narrate what 'the user' is asking — give your "
+    "actual answer or next step."
 )
 
 
 def is_logging_refusal(text: str) -> bool:
     lower = text.lower()
     return any(phrase in lower for phrase in LOGGING_REFUSAL_PHRASES)
-
-
-def is_logging_hallucination(text: str) -> bool:
-    """Chat reply invented generic infra metrics instead of Phaust test IDs."""
-    return bool(FORBIDDEN_GENERIC_LOG.search(text))
 
 
 def recall_nudge_message(
@@ -63,27 +49,30 @@ def recall_nudge_message(
 ) -> str:
     if fact_recall_key:
         return (
-            f"Look up the stored fact {fact_recall_key!r} and answer from the result. "
-            "Do not guess."
+            f"Call recall(key={fact_recall_key!r}) now (native function call). "
+            "Do not answer from injected memory text alone."
         )
     if session_state and (
         session_state.get("last_topic") or session_state.get("last_episode_id")
     ):
         topic = session_state.get("last_topic", "unknown")
+        eid = session_state.get("last_episode_id", "")
+        eid_note = f" recall_episode({eid!r}) if needed." if eid else ""
         return (
-            "Use <continue_from> first. "
-            f"Last topic was {topic!r}. "
-            "Summarize in 2–5 sentences — no raw id lists."
+            "Answer from <continue_from> in the system prompt first. "
+            f"Last topic was {topic!r}.{eid_note} "
+            "Summarize in 2–5 sentences of prose — no raw episode lists."
         )
     return (
-        "Search or recall past sessions as needed, then answer George in prose."
+        "Use <memory_recall> / search_semantic or recall_episode, then answer in prose "
+        "(native function call if you still need a tool)."
     )
 
 
 def memorize_nudge_message(user_message: str, *, suggested_text: str | None) -> str:
     if suggested_text:
         return f"{MEMORIZE_NUDGE}\nText to store:\n{suggested_text}"
-    return f"{MEMORIZE_NUDGE}\nUse his message as the note text."
+    return f"{MEMORIZE_NUDGE}\nUse the user's message as the memorize text."
 
 
 def write_nudge_message(
@@ -91,12 +80,19 @@ def write_nudge_message(
 ) -> str:
     if create_ok and not read_paths:
         return (
-            "Create the new file he asked for, or read an existing file first then edit it."
+            "Call create_file for a new file (no read_file needed), "
+            "or read_file then edit_file/write_file for an existing file."
         )
     if not read_paths:
-        return "Read the file on disk first, then propose the change he asked for."
+        return (
+            "Call read_file on the target path first. "
+            "Then use write_file or edit_file with exact on-disk text — not old chat."
+        )
     joined = ", ".join(read_paths)
     return (
-        f"Apply the file change now. Already read: {joined}. "
-        "Use exact on-disk text for edits."
+        "Apply the file change now using create_file, write_file, edit_file, or delete_file "
+        "(native function calling — not XML). "
+        "For a NEW file use create_file (no read_file needed). "
+        "For an EXISTING file use read_file first, then edit_file or write_file. "
+        f"File(s) already read: {joined}."
     )

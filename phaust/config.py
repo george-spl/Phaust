@@ -32,33 +32,29 @@ class SynthesisConfig:
     model: str | None = None
     base_url: str | None = None
     api_key: str | None = None
-    temperature: float = 0.15
-    max_tokens: int = 2048
+    temperature: float = 0.2
+    max_tokens: int = 1024
 
 
 @dataclass(frozen=True)
 class PhaustConfig:
-    model: str = "qwen/qwen3-14b"
+    model: str = "qwen/qwen3.5-9b"
     base_url: str = "http://127.0.0.1:1234/v1"
     api_key: str = "NO_API_KEY"
-    temperature: float = 0.25
-    max_tokens: int = 2048
+    temperature: float = 0.3
+    max_tokens: int = 8192
     synthesis: SynthesisConfig = field(default_factory=SynthesisConfig)
     workspace_root: Path | None = None
     max_messages: int = 50
     compact_batch: int = 10
     max_episodes: int = 500
     semantic_top_k: int = 5
-    embedding_model: str | None = "text-embedding-nomic-embed-text-v1.5"
     max_tool_rounds: int = 12
     max_write_proposals: int = 2
     require_write_approval: bool = True
     iteration: int = 2
     name: str = "Phaust-2"
     agents_md: str = "AGENTS.md"
-    conversational_first: bool = True
-    chat_temperature: float | None = 0.35
-    quiet_memory_tools: bool = True
     shell: ShellConfig = field(default_factory=default_shell_config)
     tasks: TaskConfig = field(default_factory=TaskConfig)
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
@@ -139,12 +135,6 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
         compact_batch=int(memory.get("compact_batch", config.compact_batch)),
         max_episodes=int(memory.get("max_episodes", config.max_episodes)),
         semantic_top_k=int(memory.get("semantic_top_k", config.semantic_top_k)),
-        embedding_model=(
-            str(memory["embedding_model"]).strip()
-            if isinstance(memory.get("embedding_model"), str)
-            and str(memory["embedding_model"]).strip()
-            else config.embedding_model
-        ),
         max_tool_rounds=int(agent.get("max_tool_rounds", config.max_tool_rounds)),
         max_write_proposals=int(
             agent.get("max_write_proposals", config.max_write_proposals)
@@ -155,17 +145,6 @@ def _coerce_table(raw: dict[str, Any], config: PhaustConfig, base: Path) -> Phau
         iteration=int(meta.get("iteration", config.iteration)),
         name=str(meta.get("name", config.name)),
         agents_md=str(agent.get("agents_md", config.agents_md)),
-        conversational_first=bool(
-            agent.get("conversational_first", config.conversational_first)
-        ),
-        chat_temperature=(
-            float(agent["chat_temperature"])
-            if agent.get("chat_temperature") is not None
-            else config.chat_temperature
-        ),
-        quiet_memory_tools=bool(
-            agent.get("quiet_memory_tools", config.quiet_memory_tools)
-        ),
         shell=shell_cfg,
         tasks=TaskConfig(
             enabled=bool(tasks.get("enabled", config.tasks.enabled)),

@@ -14,9 +14,7 @@ if TYPE_CHECKING:
 MAX_WRITE_BYTES = 512_000
 MAX_DIFF_LINES = 120
 
-WRITE_TOOL_NAMES = frozenset(
-    {"create_file", "edit_file", "write_file", "delete_file", "append_to_file"}
-)
+WRITE_TOOL_NAMES = frozenset({"create_file", "edit_file", "write_file", "delete_file"})
 
 WRITE_BLOCKED_DIR_NAMES = {
     ".git",
@@ -74,59 +72,6 @@ def _format_diff(rel_path: str, before: str, after: str) -> str:
         extra = len(lines) - MAX_DIFF_LINES
         lines = lines[:MAX_DIFF_LINES] + [f"... diff truncated ({extra} more lines) ..."]
     return "\n".join(lines) if lines else "(no line changes)\n"
-
-
-def _strip_pasted_file_body(extra: str, before: str) -> str:
-    """Drop a full copy of the file the model pasted into append content."""
-    text = str(extra).lstrip("\n")
-    if not before.strip():
-        return text
-    b = before.rstrip("\n")
-    if text.startswith(b):
-        return text[len(b) :].lstrip("\n")
-    if text.startswith(b[: min(len(b), 400)]):
-        return text[min(len(b), 400) :].lstrip("\n")
-    if b in text:
-        parts = text.split(b)
-        tail = parts[-1].strip() if parts else text
-        if tail:
-            return tail
-    return text
-
-
-def prepare_append_to_file(ws: Workspace, path: str, content: str) -> dict[str, Any]:
-    """Append new text after existing file contents (read_file required first)."""
-    target, err = _check_writable_path(ws, path)
-    if err:
-        return err
-    if not target.is_file():  # type: ignore
-        return {
-            "error": f"Not a file: {path}",
-            "hint": "Use create_file for new paths.",
-        }
-
-    before = target.read_text(encoding="utf-8", errors="replace")  # type: ignore
-    text = _strip_pasted_file_body(content, before)
-    if not text.strip():
-        return {
-            "error": "Append content is empty after removing duplicated file body",
-            "path": path,
-            "hint": "Pass only NEW lines to append, not the full file from read_file.",
-        }
-    sep = "\n" if before and not before.endswith("\n") else ""
-    return prepare_write_file(ws, path, before + sep + text)
-
-
-def normalize_edit_file_args(ws: Workspace, args: dict[str, Any]) -> dict[str, Any] | None:
-    """If model used edit_file append aliases, return None to signal append_to_file instead."""
-    if args.get("old_string") is not None and args.get("new_string") is not None:
-        return args
-    extra = args.get("content_to_append") or args.get("append")
-    if extra is None and args.get("content") is not None and "old_string" not in args:
-        extra = args.get("content")
-    if extra is None:
-        return args
-    return None
 
 
 def prepare_edit_file(
@@ -332,13 +277,8 @@ def register_write_tools(agent: Agent, workspace: Workspace) -> None:
 
     @agent.tool
     def edit_file(path: str, old_string: str, new_string: str) -> dict:
-        """Propose replacing exactly one occurrence of old_string in a file."""
+        """Propose replacing exactly one occurrence of old_string in a file. User must approve before write."""
         return prepare_edit_file(workspace, path, old_string, new_string)
-
-    @agent.tool
-    def append_to_file(path: str, content: str) -> dict:
-        """Append new text to an existing file after read_file. Pass NEW content only."""
-        return prepare_append_to_file(workspace, path, content)
 
     @agent.tool
     def create_file(path: str, content: str) -> dict:

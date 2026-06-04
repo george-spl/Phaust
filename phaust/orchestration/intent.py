@@ -24,13 +24,6 @@ class TurnIntent:
     fact_recall: bool = False
     fact_recall_key: str | None = None
     explicit_memory_tool: bool = False
-    profile_question: bool = False
-    store_fact: bool = False
-    store_fact_key: str | None = None
-    store_fact_value: str | None = None
-    read_request: bool = False
-    code_search: bool = False
-    list_request: bool = False
     minimal: bool = False
 
     @property
@@ -90,13 +83,6 @@ def _recall_past(message: str) -> bool:
     )
 
 
-def _store_fact(message: str) -> tuple[str, str] | None:
-    match = p.REMEMBER_KV.match(message.strip())
-    if not match:
-        return None
-    return match.group(1), match.group(2).strip()
-
-
 def _fact_recall_key(message: str) -> str | None:
     match = p.FACT_RECALL.match(message.strip())
     if not match:
@@ -111,8 +97,6 @@ def _minimal(message: str) -> bool:
     text = message.strip()
     if not text:
         return False
-    if p.EXPLICIT_MEMORY_TOOL.search(text) or p.FACT_RECALL.match(text):
-        return False
     if len(text) <= 12 and p.LONE_DIGIT.fullmatch(text):
         return True
     if len(text) <= 20 and not re.search(r"\s{2,}", text):
@@ -124,7 +108,6 @@ def _minimal(message: str) -> bool:
 
 def classify_turn(message: str) -> TurnIntent:
     key = _fact_recall_key(message)
-    stored = _store_fact(message)
     return TurnIntent(
         message=message,
         file_change=_file_change(message),
@@ -138,34 +121,7 @@ def classify_turn(message: str) -> TurnIntent:
         fact_recall=key is not None,
         fact_recall_key=key,
         explicit_memory_tool=bool(p.EXPLICIT_MEMORY_TOOL.search(message)),
-        profile_question=bool(p.PROFILE_QUESTION.search(message)),
-        store_fact=stored is not None,
-        store_fact_key=stored[0] if stored else None,
-        store_fact_value=stored[1] if stored else None,
-        read_request=bool(p.READ_REQUEST.search(message)),
-        code_search=bool(p.CODE_SEARCH.search(message)),
-        list_request=bool(p.LIST_REQUEST.search(message)),
         minimal=_minimal(message),
-    )
-
-
-def is_conversational_turn(intent: TurnIntent) -> bool:
-    """Pure chat — not file/shell/memory-tool work."""
-    if intent.minimal:
-        return True
-    return not (
-        intent.wants_write
-        or intent.shell
-        or intent.logging_task
-        or intent.memorize
-        or intent.store_fact
-        or intent.fact_recall
-        or intent.recall_past
-        or intent.explicit_memory_tool
-        or intent.profile_question
-        or intent.read_request
-        or intent.code_search
-        or intent.list_request
     )
 
 

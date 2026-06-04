@@ -17,6 +17,7 @@ SHELL_TOOL_NAMES = frozenset({"run_command"})
 
 DEFAULT_SHELL_ALLOW: tuple[str, ...] = (
     "python --version",
+    "python -m pytest",
     "python -m pip list",
     "python -m pip show",
     "python -m py_compile",

@@ -14,17 +14,9 @@ APPEND_INTENT = re.compile(
     r"\b(?:more|another|additional|\d+\s+more)\s+lines?\b|\bappend\b",
     re.I,
 )
-PROFILE_QUESTION = re.compile(
-    r"\b(?:what do you know about me|know anything about me|anything about me"
-    r"|tell me about myself|who am i\b|about my (?:life|job|work)"
-    r"|what(?:'s| is) my (?:name|job|age|goal))\b",
-    re.I,
-)
 MEMORY_RECALL = re.compile(
     r"\b(?:do you remember|don'?t you remember|you don'?t remember"
     r"|recall\s+episode|what did we (?:say|discuss|talk about)"
-    r"|\b(?:what|how|do you|did we|tell me about).{0,50}last session\b"
-    r"|\bprevious session\b"
     r"|what were we (?:discussing|talking about)"
     r"|what (?:did )?I (?:just )?memorize|what I memorized"
     r"|something we discussed|discussed earlier|previous(?:ly)?\s+(?:session|conversation)"
@@ -66,22 +58,6 @@ GIT_STAGING = re.compile(
     re.I,
 )
 FACT_RECALL = re.compile(r"^\s*recall\s+([a-z_][\w]*)\s*$", re.I)
-REMEMBER_KV = re.compile(
-    r"^\s*remember\s+([a-z_][\w]*)\s*=\s*(.+?)\s*$",
-    re.I,
-)
-READ_REQUEST = re.compile(
-    r"\bread\b.*\.(?:py|md|txt|toml|json)\b|\bread\b.*\blines?\s+\d",
-    re.I,
-)
-CODE_SEARCH = re.compile(
-    r"\b(?:find|where is|locate|grep|search for)\b",
-    re.I,
-)
-LIST_REQUEST = re.compile(
-    r"\blist\b.*\b(?:files?|directory|folder)\b|\blist_directory\b|\blist_files\b",
-    re.I,
-)
 # Question-oriented cross-session recall — not bare "last session" in user narratives
 CROSS_SESSION = re.compile(
     r"\b(?:what did we do|in testing|prior session|stress_c1|earlier today"
@@ -99,8 +75,7 @@ NARRATIVE_NEW_CONTEXT = re.compile(
 )
 LOGGING_TASK = re.compile(
     r"\btest_logging(?:_\d+)?(?:_\d+-\d+-\d+)?\.txt\b|"
-    r"\b(?:operator scores|test scores|self-assessment|Phaust overall opinion)\b|"
-    r"\b(?:tests?\s+[A-Z]\d|opinion on tests?\s+[A-Z]|append (?:your )?opinion)\b",
+    r"\b(?:operator scores|test scores|self-assessment|Phaust overall opinion)\b",
     re.I,
 )
 CREATE_FILE = re.compile(
@@ -114,7 +89,6 @@ MEMORIZE_TEXT = (
 )
 LONE_DIGIT = re.compile(r"\d{1,3}")
 EXPLICIT_MEMORY_TOOL = re.compile(
-    r"(?:^\s*(?:search_semantic|recall_episode|list_episodes|list_memories|forget_semantic)\b|"
-    r"\b(?:search_semantic|recall_episode|list_episodes)\b)",
+    r"^\s*(?:search_semantic|recall_episode|list_episodes|list_memories|forget_semantic)\b",
     re.I,
 )

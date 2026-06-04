@@ -22,12 +22,11 @@ from phaust.turn_loop import run_chat_turn
 @dataclass
 class Agent:
     system_prompt: str = ""
-    workspace_rules: str = ""
-    model: str = "qwen/qwen3-14b"
+    model: str = "qwen/qwen3.5-9b"
     base_url: str = "http://127.0.0.1:1234/v1"
     api_key: str = field(default="NO_API_KEY", repr=False)
-    temperature: float = 0.25
-    max_tokens: int = 2048
+    temperature: float = 0.3
+    max_tokens: int = 8192
     max_tool_rounds: int = 12
     max_write_proposals: int = 2
     semantic_top_k: int = 5
@@ -47,9 +46,6 @@ class Agent:
     config_path: Path | None = None
     config_name: str = "Phaust-2"
     agents_md_path: Path | None = None
-    conversational_first: bool = True
-    chat_temperature: float | None = 0.35
-    quiet_memory_tools: bool = True
     task_manager: TaskManager | None = None
     synthesis: SynthesisConfig = field(default_factory=SynthesisConfig)
 

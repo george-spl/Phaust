@@ -36,7 +36,7 @@ class SemanticMemory:
     db: MemoryStore = field(default_factory=MemoryStore)
     base_url: str = "http://127.0.0.1:1234/v1"
     api_key: str = "NO_API_KEY"
-    model: str = "qwen/qwen3-14b"
+    model: str = "qwen/qwen3.5-9b"
     embedding_model: str | None = None
     max_episodes: int = 500
     hybrid_retrieval: bool = True

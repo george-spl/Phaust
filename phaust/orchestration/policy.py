@@ -34,29 +34,10 @@ def should_skip_synthesis(
     intent: TurnIntent,
     tool_calls: list[dict[str, Any]],
 ) -> bool:
-    if intent.skip_synthesis_default or intent.logging_task:
+    if intent.skip_synthesis_default:
         return True
     return round_includes_tools(tool_calls, WRITE_TOOL_NAMES) or round_includes_tools(
         tool_calls, SHELL_TOOL_NAMES
-    )
-
-
-def _read_test_logging(read_paths: list[str]) -> bool:
-    return any("test_logging" in (p or "").replace("\\", "/").lower() for p in read_paths)
-
-
-def should_nudge_logging_edit(
-    intent: TurnIntent,
-    *,
-    read_paths: list[str],
-    write_applied: bool,
-    budget: NudgeBudget,
-) -> bool:
-    return (
-        intent.logging_task
-        and _read_test_logging(read_paths)
-        and not write_applied
-        and budget.logging < 2
     )
 
 
@@ -74,17 +55,12 @@ def should_nudge_memorize(
     memory_stored: bool,
     budget: NudgeBudget,
 ) -> bool:
-    return (
-        (intent.memorize or intent.store_fact)
-        and not memory_stored
-        and budget.memorize < 1
-    )
+    return intent.memorize and not memory_stored and budget.memorize < 1
 
 
 def should_nudge_write(
     intent: TurnIntent,
     *,
-    read_paths: list[str],
     write_applied: bool,
     write_declined: bool,
     write_policy_blocked: bool,
@@ -92,8 +68,6 @@ def should_nudge_write(
     max_write_proposals: int,
     budget: NudgeBudget,
 ) -> bool:
-    if intent.logging_task and _read_test_logging(read_paths):
-        return False
     return (
         intent.wants_write
         and not write_applied
@@ -124,11 +98,9 @@ def should_nudge_logging(
     reply: str,
     budget: NudgeBudget,
 ) -> bool:
-    from phaust.orchestration.nudges import is_logging_hallucination, is_logging_refusal
+    from phaust.orchestration.nudges import is_logging_refusal
 
-    if not intent.logging_task or budget.logging >= 1:
-        return False
-    return is_logging_refusal(reply) or is_logging_hallucination(reply)
+    return intent.logging_task and budget.logging < 1 and is_logging_refusal(reply)
 
 
 def should_nudge_recall(
@@ -148,8 +120,6 @@ def should_nudge_recall(
         return False
     if is_feedback_not_memory(intent.message):
         return False
-    if intent.profile_question:
-        return False
     if (
         is_generic_last_session_query(intent.message)
         and session_state
@@ -167,7 +137,6 @@ def should_nudge_recall(
         and budget.recall < 1
         and not intent.logging_task
         and not intent.memorize
-        and not intent.store_fact
     )
 
 

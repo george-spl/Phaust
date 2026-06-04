@@ -48,7 +48,7 @@ User message
 1. **No new regex in `agent.py`.** Extend `patterns.py` and `classify_turn()`.
 2. **No new nudge strings in `agent.py`.** Add to `nudges.py` and wire through `policy.py`.
 3. **Prompt directives are data-driven.** `build_turn_directives(intent, …)` owns conditional system blocks.
-4. **Behavior changes need a manual check.** Run the relevant cases in `docs/STRESS_TESTS.md` and note results in `test_logging.txt`.
+4. **Behavior changes need a test.** See `tests/test_orchestration.py` and `tests/test_tasks.py`.
 
 ## Task mode (`phaust/tasks/`)
 
@@ -141,4 +141,4 @@ Example: “when user asks for X, nudge tool Y once”:
 3. Add directive block in `prompt_blocks.py` if the model needs instructions.
 4. Add `should_nudge_*` in `policy.py` and message in `nudges.py`.
 5. Wire in `turn_loop.run_chat_turn()` using `NudgeBudget`.
-6. Exercise the change via `phaust` and log in `test_logging.txt` if it affects stress criteria.
+6. Add a test in `tests/test_orchestration.py`.
